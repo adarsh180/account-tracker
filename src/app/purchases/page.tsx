@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AuthLayout from '@/components/AuthLayout'
-import { ShoppingCart, Plus, X, Edit2, Trash2, AlertCircle } from 'lucide-react'
+import { ShoppingCart, Plus, X, Edit2, Trash2, AlertCircle, Search } from 'lucide-react'
 
 interface Party { id: string; name: string; type: string }
 interface Inventory { commodity: string; unit: string }
 interface Purchase {
   id: string; commodity: string; unit: string; quantity: string; rate: string
   purchasePrice: string; laborCost: string; transportCost: string; loadingCost: string
-  miscOverhead: string; gstPercent: string; gstAmount: string; totalCost: string; date: string; notes: string | null
+  miscOverhead: string; gstPercent: string; gstAmount: string; tcsPercent: string; tcsAmount: string; totalCost: string; date: string; notes: string | null
   party: { name: string }
 }
 
@@ -24,14 +24,15 @@ export default function PurchasesPage() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     id: '', commodity: '', unit: 'KG', quantity: '', rate: '',
-    laborCost: '0', transportCost: '0', loadingCost: '0', miscOverhead: '0', gstPercent: '0',
+    laborCost: '0', transportCost: '0', loadingCost: '0', miscOverhead: '0', gstPercent: '0', tcsPercent: '0',
     partyId: '', date: new Date().toISOString().split('T')[0], notes: '',
   })
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
   const resetForm = () => setForm({ 
     id: '', commodity: '', unit: 'KG', quantity: '', rate: '', laborCost: '0', 
-    transportCost: '0', loadingCost: '0', miscOverhead: '0', gstPercent: '0', 
+    transportCost: '0', loadingCost: '0', miscOverhead: '0', gstPercent: '0', tcsPercent: '0', 
     partyId: '', date: new Date().toISOString().split('T')[0], notes: '' 
   })
 
@@ -84,6 +85,7 @@ export default function PurchasesPage() {
       loadingCost: purchase.loadingCost.toString(),
       miscOverhead: purchase.miscOverhead.toString(),
       gstPercent: purchase.gstPercent.toString(),
+      tcsPercent: purchase.tcsPercent.toString(),
       partyId: purchase.party.name ? parties.find(p => p.name === purchase.party.name)?.id || '' : '',
       date: new Date(purchase.date).toISOString().split('T')[0],
       notes: purchase.notes || '',
@@ -93,7 +95,13 @@ export default function PurchasesPage() {
 
   const purchasePrice = Number(form.quantity || 0) * Number(form.rate || 0)
   const gstAmount = purchasePrice * (Number(form.gstPercent || 0) / 100)
-  const totalCost = purchasePrice + gstAmount + Number(form.laborCost || 0) + Number(form.transportCost || 0) + Number(form.loadingCost || 0) + Number(form.miscOverhead || 0)
+  const totalCostBeforeTCS = purchasePrice + gstAmount + Number(form.laborCost || 0) + Number(form.transportCost || 0) + Number(form.loadingCost || 0) + Number(form.miscOverhead || 0)
+  const tcsAmount = totalCostBeforeTCS * (Number(form.tcsPercent || 0) / 100)
+  const totalCost = totalCostBeforeTCS + tcsAmount
+
+  const filteredPurchases = purchases.filter(p => 
+    p.party.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
     <AuthLayout>
@@ -104,6 +112,18 @@ export default function PurchasesPage() {
             <p className="page-subtitle">Buy batches with full cost attribution</p>
           </div>
           <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}><Plus size={16} /> New Purchase</button>
+        </div>
+
+        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '300px' }}>
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+          <input
+            type="text"
+            className="input-glass"
+            placeholder="Search by seller name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ paddingLeft: '40px', width: '100%' }}
+          />
         </div>
 
         <AnimatePresence>
@@ -158,6 +178,14 @@ export default function PurchasesPage() {
                       <option value="28">28%</option>
                     </select>
                   </div>
+                  <div className="form-group">
+                    <label className="form-label">TCS %</label>
+                    <select className="input-glass" value={form.tcsPercent} onChange={(e) => setForm({ ...form, tcsPercent: e.target.value })}>
+                      <option value="0">0%</option>
+                      <option value="0.1">0.1%</option>
+                      <option value="1">1%</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="section-divider" />
@@ -184,8 +212,10 @@ export default function PurchasesPage() {
 
                 <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(68,138,255,0.06)', border: '1px solid rgba(68,138,255,0.1)', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Purchase Price {gstAmount > 0 && `+ GST (₹${formatNumber(gstAmount)})`}</div>
-                    <div style={{ fontSize: '18px', fontWeight: 700 }}>₹{formatNumber(purchasePrice + gstAmount)}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Purchase Price {gstAmount > 0 && `+ GST (₹${formatNumber(gstAmount)})`} {tcsAmount > 0 && `+ TCS (₹${formatNumber(tcsAmount)})`}
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: 700 }}>₹{formatNumber(purchasePrice + gstAmount + tcsAmount)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Total Cost (incl. all)</div>
@@ -233,17 +263,23 @@ export default function PurchasesPage() {
             <div className="empty-state-text">No purchases recorded</div>
             <div className="empty-state-sub">Create your first purchase to build inventory</div>
           </div>
+        ) : filteredPurchases.length === 0 ? (
+          <div className="glass-card empty-state">
+            <Search className="empty-state-icon" size={48} style={{ opacity: 0.5 }} />
+            <div className="empty-state-text">No results found</div>
+            <div className="empty-state-sub">No seller matches "{searchQuery}"</div>
+          </div>
         ) : (
           <motion.div className="glass-card" style={{ padding: '4px 0', overflow: 'auto' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Date</th><th>Commodity</th><th>Qty</th><th>Rate</th><th>Purchase ₹</th>
-                  <th>GST</th><th>Attributed Cost</th><th>Total Cost</th><th>Seller</th><th style={{ width: '80px', textAlign: 'right' }}>Actions</th>
+                  <th>GST</th><th>TCS</th><th>Attributed Cost</th><th>Total Cost</th><th>Seller</th><th style={{ width: '80px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {purchases.map((p, i) => (
+                {filteredPurchases.map((p, i) => (
                   <motion.tr key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}>
                     <td style={{ color: 'var(--text-secondary)' }}>{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
                     <td><span className="badge badge-blue">{p.commodity.replace('_', ' ')}</span></td>
@@ -251,6 +287,7 @@ export default function PurchasesPage() {
                     <td>₹{formatNumber(Number(p.rate))}</td>
                     <td>₹{formatNumber(Number(p.purchasePrice))}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{Number(p.gstPercent) > 0 ? `${p.gstPercent}% (₹${formatNumber(Number(p.gstAmount))})` : '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{Number(p.tcsPercent) > 0 ? `${p.tcsPercent}% (₹${formatNumber(Number(p.tcsAmount))})` : '—'}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>₹{formatNumber(Number(p.laborCost) + Number(p.transportCost) + Number(p.loadingCost) + Number(p.miscOverhead))}</td>
                     <td style={{ fontWeight: 600, color: 'var(--accent-amber)' }}>₹{formatNumber(Number(p.totalCost))}</td>
                     <td>{p.party.name}</td>

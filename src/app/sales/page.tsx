@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AuthLayout from '@/components/AuthLayout'
-import { TrendingUp, Plus, X, Edit2, Trash2, AlertCircle } from 'lucide-react'
+import { TrendingUp, Plus, X, Edit2, Trash2, AlertCircle, Search } from 'lucide-react'
 
 interface Party { id: string; name: string; type: string }
 interface Inventory { commodity: string; unit: string }
@@ -28,6 +28,7 @@ export default function SalesPage() {
     partyId: '', purchaseId: '', date: new Date().toISOString().split('T')[0], notes: '',
   })
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
   const resetForm = () => setForm({
     id: '', commodity: '', sourceCommodity: '', unit: 'KG', quantity: '', rate: '', gstPercent: '0', bankAmount: '',
@@ -101,6 +102,10 @@ export default function SalesPage() {
     setShowForm(true)
   }
 
+  const filteredSales = sales.filter(s => 
+    s.party.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
     <AuthLayout>
       <div className="page-container">
@@ -110,6 +115,18 @@ export default function SalesPage() {
             <p className="page-subtitle">Split-profit transaction engine · Bank & Cash</p>
           </div>
           <button className="btn btn-success" onClick={() => { resetForm(); setShowForm(true); }}><Plus size={16} /> New Sale</button>
+        </div>
+
+        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '300px' }}>
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+          <input
+            type="text"
+            className="input-glass"
+            placeholder="Search by buyer name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ paddingLeft: '40px', width: '100%' }}
+          />
         </div>
 
         <AnimatePresence>
@@ -279,6 +296,12 @@ export default function SalesPage() {
             <div className="empty-state-text">No sales recorded</div>
             <div className="empty-state-sub">Create your first sale to start tracking profits</div>
           </div>
+        ) : filteredSales.length === 0 ? (
+          <div className="glass-card empty-state">
+            <Search className="empty-state-icon" size={48} style={{ opacity: 0.5 }} />
+            <div className="empty-state-text">No results found</div>
+            <div className="empty-state-sub">No buyer matches "{searchQuery}"</div>
+          </div>
         ) : (
           <motion.div className="glass-card" style={{ padding: '4px 0', overflow: 'auto' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <table className="data-table">
@@ -289,7 +312,7 @@ export default function SalesPage() {
                 </tr>
               </thead>
               <tbody>
-                {sales.map((s, i) => (
+                {filteredSales.map((s, i) => (
                   <motion.tr key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}>
                     <td style={{ color: 'var(--text-secondary)' }}>{new Date(s.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
                     <td>

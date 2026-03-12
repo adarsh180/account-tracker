@@ -21,13 +21,18 @@ export async function POST(req: NextRequest) {
     const purchasePrice = Number(body.quantity) * Number(body.rate)
     const gstPercent = Number(body.gstPercent || 0)
     const gstAmount = purchasePrice * (gstPercent / 100)
-    const totalCost =
+    const totalCostBeforeTCS =
       purchasePrice +
       gstAmount +
       Number(body.laborCost || 0) +
       Number(body.transportCost || 0) +
       Number(body.loadingCost || 0) +
       Number(body.miscOverhead || 0)
+
+    const tcsPercent = Number(body.tcsPercent || 0)
+    const tcsAmount = totalCostBeforeTCS * (tcsPercent / 100)
+    
+    const totalCost = totalCostBeforeTCS + tcsAmount
 
     const purchase = await prisma.purchase.create({
       data: {
@@ -42,6 +47,8 @@ export async function POST(req: NextRequest) {
         miscOverhead: Number(body.miscOverhead || 0),
         gstPercent: gstPercent,
         gstAmount: gstAmount,
+        tcsPercent: tcsPercent,
+        tcsAmount: tcsAmount,
         totalCost: totalCost,
         partyId: body.partyId,
         date: body.date ? new Date(body.date) : new Date(),
@@ -100,13 +107,18 @@ export async function PUT(req: NextRequest) {
     const purchasePrice = Number(data.quantity) * Number(data.rate)
     const gstPercent = Number(data.gstPercent || 0)
     const gstAmount = purchasePrice * (gstPercent / 100)
-    const totalCost =
+    const totalCostBeforeTCS =
       purchasePrice +
       gstAmount +
       Number(data.laborCost || 0) +
       Number(data.transportCost || 0) +
       Number(data.loadingCost || 0) +
       Number(data.miscOverhead || 0)
+
+    const tcsPercent = Number(data.tcsPercent || 0)
+    const tcsAmount = totalCostBeforeTCS * (tcsPercent / 100)
+    
+    const totalCost = totalCostBeforeTCS + tcsAmount
 
     const updated = await prisma.purchase.update({
       where: { id },
@@ -121,6 +133,8 @@ export async function PUT(req: NextRequest) {
         miscOverhead: Number(data.miscOverhead || 0),
         gstPercent: gstPercent,
         gstAmount: gstAmount,
+        tcsPercent: tcsPercent,
+        tcsAmount: tcsAmount,
         totalCost: totalCost,
         notes: data.notes || null,
         date: data.date ? new Date(data.date) : undefined,
