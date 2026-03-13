@@ -16,6 +16,7 @@ import {
   Settings,
   LogOut,
   Zap,
+  FileText,
 } from 'lucide-react'
 
 const navItems = [
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/parties', label: 'Parties', icon: Users },
   { href: '/payments', label: 'Payments', icon: CreditCard },
   { href: '/overdraft', label: 'Overdraft', icon: Landmark },
+  { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/brain', label: 'Brain', icon: Brain },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
