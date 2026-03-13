@@ -57,6 +57,7 @@ model Purchase {
   party           Party    @relation(fields: [partyId], references: [id])
   date            DateTime @default(now())
   notes           String?  @db.Text
+  batchId         String?  @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   sales           Sale[]
@@ -78,6 +79,7 @@ model Sale {
   bankAmount    Decimal   @db.Decimal(14, 2)
   cashAmount    Decimal   @db.Decimal(14, 2)
   sourceCommodity String? // Bulk item (e.g., MS Scrap) from which this was extracted
+  batchId       String? // Link to a specific purchase lot
   purchaseId    String?
   purchase      Purchase? @relation(fields: [purchaseId], references: [id])
   partyId       String

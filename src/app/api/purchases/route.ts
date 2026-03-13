@@ -34,6 +34,11 @@ export async function POST(req: NextRequest) {
     
     const totalCost = totalCostBeforeTCS + tcsAmount
 
+    // Generate a unique Batch/Lot ID (e.g., LOT-202308-A4F2)
+    const dateStr = new Date().toISOString().slice(0, 7).replace('-', '') // YYYYMM
+    const randomHex = Math.random().toString(16).slice(2, 6).toUpperCase()
+    const batchId = `LOT-${dateStr}-${randomHex}`
+
     const purchase = await prisma.purchase.create({
       data: {
         commodity: body.commodity,
@@ -53,6 +58,7 @@ export async function POST(req: NextRequest) {
         partyId: body.partyId,
         date: body.date ? new Date(body.date) : new Date(),
         notes: body.notes || null,
+        batchId: batchId,
       },
       include: { party: true },
     })

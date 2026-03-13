@@ -10,7 +10,7 @@ interface Inventory { commodity: string; unit: string }
 interface Purchase {
   id: string; commodity: string; unit: string; quantity: string; rate: string
   purchasePrice: string; laborCost: string; transportCost: string; loadingCost: string
-  miscOverhead: string; gstPercent: string; gstAmount: string; tcsPercent: string; tcsAmount: string; totalCost: string; date: string; notes: string | null
+  miscOverhead: string; gstPercent: string; gstAmount: string; tcsPercent: string; tcsAmount: string; totalCost: string; date: string; notes: string | null; batchId?: string
   party: { name: string }
 }
 
@@ -274,13 +274,30 @@ export default function PurchasesPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Date</th><th>Commodity</th><th>Qty</th><th>Rate</th><th>Purchase ₹</th>
+                  <th>Batch ID</th><th>Date</th><th>Commodity</th><th>Qty</th><th>Rate</th><th>Purchase ₹</th>
                   <th>GST</th><th>TCS</th><th>Attributed Cost</th><th>Total Cost</th><th>Seller</th><th style={{ width: '80px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredPurchases.map((p, i) => (
                   <motion.tr key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}>
+                    <td>
+                      {p.batchId ? (
+                        <span style={{ 
+                          padding: '4px 8px', 
+                          background: 'rgba(68,138,255,0.15)', 
+                          color: 'var(--accent-blue)', 
+                          borderRadius: '4px', 
+                          fontSize: '12px', 
+                          fontWeight: 600,
+                          fontFamily: 'monospace'
+                        }}>
+                          {p.batchId}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>—</span>
+                      )}
+                    </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
                     <td><span className="badge badge-blue">{p.commodity.replace('_', ' ')}</span></td>
                     <td>{formatNumber(Number(p.quantity))} {p.unit}</td>

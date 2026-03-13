@@ -3,15 +3,17 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AuthLayout from '@/components/AuthLayout'
-import { TrendingUp, Plus, X, Edit2, Trash2, AlertCircle, Search } from 'lucide-react'
+import { TrendingUp, Plus, X, Edit2, Trash2, AlertCircle, Search, FileText } from 'lucide-react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 interface Party { id: string; name: string; type: string }
 interface Inventory { commodity: string; unit: string }
-interface Purchase { id: string; commodity: string; quantity: string; totalCost: string; party: { name: string } }
+interface Purchase { id: string; commodity: string; quantity: string; totalCost: string; batchId?: string; party: { name: string } }
 interface Sale {
   id: string; commodity: string; unit: string; quantity: string; rate: string
   gstPercent: string; gstAmount: string; totalAmount: string; bankAmount: string; cashAmount: string; date: string; notes: string | null; sourceCommodity: string | null
-  party: { name: string }; isPaid: boolean; purchaseId: string | null
+  party: { name: string }; isPaid: boolean; purchaseId: string | null; batchId: string | null
 }
 
 const formatNumber = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)
@@ -25,14 +27,14 @@ export default function SalesPage() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     id: '', commodity: '', sourceCommodity: '', unit: 'KG', quantity: '', rate: '', gstPercent: '0', bankAmount: '',
-    partyId: '', purchaseId: '', date: new Date().toISOString().split('T')[0], notes: '',
+    partyId: '', purchaseId: '', batchId: '', date: new Date().toISOString().split('T')[0], notes: '',
   })
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   
   const resetForm = () => setForm({
     id: '', commodity: '', sourceCommodity: '', unit: 'KG', quantity: '', rate: '', gstPercent: '0', bankAmount: '',
-    partyId: '', purchaseId: '', date: new Date().toISOString().split('T')[0], notes: '',
+    partyId: '', purchaseId: '', batchId: '', date: new Date().toISOString().split('T')[0], notes: '',
   })
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export default function SalesPage() {
       bankAmount: sale.bankAmount.toString(),
       partyId: sale.party.name ? parties.find(p => p.name === sale.party.name)?.id || '' : '',
       purchaseId: sale.purchaseId || '',
+      batchId: sale.batchId || '',
       sourceCommodity: sale.sourceCommodity || '',
       date: new Date(sale.date).toISOString().split('T')[0],
       notes: sale.notes || '',
@@ -105,6 +108,87 @@ export default function SalesPage() {
   const filteredSales = sales.filter(s => 
     s.party.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  const generateInvoicePDF = (sale: Sale) => {
+    const doc = new jsPDF()
+
+    // Base64 Logo (Same as the one initialized in Phase 11)
+    const logoBase64 = 'data:image/png;base64,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R2pW7dEa5wI/vPfee3e/+OKL+3x/vD/uO3h8fHzS18+12s4L55vPq0c///zzF0+fPv38qVOnnvd1i3A9I9Qk/qD24+HjZWVlbWZmZk3t705PT6/x9xVeu5/G61rEw//jY9+8ebPF++vExEQH14fP1yM/kce18h5/L/cK3vR1v8fr2iV84b+fL7t87S+8/fbbn62srHzY0Y1Hjx79oFKp/Kh/H+d/Tbzf/e233z4v+/u99+Z/V03k91iLz4s2q62p/z1b1rZ8A+/d10/fH9R2d/v307r++1l5v9tV/13i/a1/P01NTT23sLCwtb29vYTrJt9Yt1N7/1779vXr128fPnz4u1ar9avWw60//fTTr8+dO/fn5cuXf2K98/o29Uf/X/R78ffl883Nzbv8/X6uozLz2X5YhB9Y7/A1I/x93881q2Xv8/v7KysrH9+6deskL+yDfn38nB96w8vS61dG08w43T/eA0+v2v/P71+9fKjffL2B0sZ43/Wv44O4P13U3n7973y5vR5c+76wU4+r/721tbUr77zzzp8PHjz4R29h7Xy+tbm5uceH2q+jNvxzU/H6I/g8b067+g2Z/r/hNdbT2eG91P2e1n59/hX69/d5//7d1tbW1fX19Z+x1t94A9v7uH/v21kfuPf+fK4A8W5cI//888+H4/q+x4+D75Z16f6/Y/4//IeHhy/Nzs4unT//R2l84/H3x/783Llzb2i2u/Bvf/HixTfm5ubmPnj//ZeXFxdv8DfjX3nzzTdfZ703uW4y2y0XFha28bnv6zO+z93Xerl48eL2tWvXrtZqtatLS0vL+Lz3p0y+/8bKyspHjUbj2s7Ozv1n1f8e12u+Z6zP+L4V6yIvvvji2++9885bt27desm/P79Q+/d574nfeF7GZ1d+/fXXv/zggw/+6v8ffvvtN+/wefnHxcXFG9evX/+g7N7+253+Y1544YW3Njc3/Xz3gP+u8PfwMhfnR72R/xU+4z1j78r0eH2N6D0j9vffb7zxxm+vXbv2x9mzZzepR2ZzWz4T3uK9nF566aX36H+12t9H7x/e119//b0K+46vR+Tf/fOfX15aWrpC+1q+3r1794G/l7l3794j3ndWbX9269atN2k/n9t/79y5I4tG29iP1z/++OOjR6r98/uSfvPNN//Qj88XmN9s2y8Zp/s57Pfff3/r1q1bL/DDr/X2/pP6v6vU/Xb17x84fXh4WF25cuXDq1evfqR2H/TfD+K176/fffHFFx/ydbfe/BuvffjL1atXv1tbW9uq1Wrr/v+jvvXWWysv/f575c0//vgj8++u6k8P1L/y3Ww2H2D9M99H1/n0/35//PHH+S+rff6+9/eDBw8q9K9S99v4+yX171/Xrl377MqVK38wA8+lT1u7sP7z19bWPv/www//xPvB1/g/SdfZvnX9+vU/eD3+0Zvn+nB58O//z5n/xN/179m+d++e/x4YJ6T7Q+f+/fvZ+B/9L//J2+zP2Wwz9+7dy8bnZ//I6bS9/T7K9fve1r5f75eB9eD+0r65u7u7t72/n/k/S4zPT/7H1y0+U3+j7Sze21uI/d3oH/d2d3aO+n+3/f/sR2k/Wk/9n26p/U+1/3+s9/n6h/Hj75fR/1k+uOcfMv1h2//P9g983U9L+8n6vLq/y2+TddnZ2Tr4/LPPPgvbN9iSgUAgEAgEwhAABKFAiEAgQAQiBCAQiEAEEAIQiBAAAIgAAgQgBCAAQAQiEIIAAEAIEIAACAACBAAhAEAABAgAQAACAQAABAAEAEAgkFhACAQAECAEUg1AiEAAACAIBEIAAqFAhAAAQAQEIQQCAEIEQgAAiEAEEIAAAAQIBACEEIAABCBACAEIQgACIAAEYAFAIBACACBAQAAEQhEIAAIhAAQigAABCBEABIEIAYgAQoAACAABABGAAAQiEAIIAAACAQAIBCFAiAAMIEAIBECAQAQAIAIRIBABCEAIBAEAyA4IQQhAAAABAghAABEIASAAQgAAAIAABECIAAgAAhGEIIQAARABEAhEIBACAYAQAEAQAUCIAIAIgECAEIQIRAAAAQIIIEAIQAQAEIQIQKQQgAAEhD0CAYAAIRACQAACAAAEQAgEIkAAQQB2ECAEQiAQAhAAAAhAAIRACAAAQAAIRAACCAABEAAAIAIQIBAAAIQQAgQIQIhAAACICAAAQgiBCIRACAAhAQAQiBCAQAhAEEIEQIQIQAAEIQQQAhGIAACAQCAAEEAAhEAEEQAhBACEAAhACCFAICIEEQgEIUIIEAIQhBACgAgBCBCAEAJCIEQQIAQgCEKAAAEAIwAhAhEAAIQIQAQgBIIQgkAEACBCBEIEQiAgAEIEIEQgAAEAQEIEEAgRAlACAgEgEIUQgAABADsgRAQAIxABEEIIIQhEIBCIAAIAIAIBEAIQCEQAiEAgQAQgAhGACAQCERABABEAIAIIABCBAAhCBAAiAEIEIAIBEAACAwRABEIQAACEEACIQIAIgBCAEEKEYAQIEQAEIBCEQQQQIQgAEG9AEAgAAIBwICIAAIBABCCEEIAQiEAgBCKEAgQQEIAQAUCIAIBACEAAAAIBCIEAIgAQIAQgBIAQCAQCAQAAQSAEIQCIEAEAgAABECIAEEIIEIhAIBARAhACEQiBQAAAgBBEEIAAAAhACCACQAARIAAAEIhAIAIgEIEEBAKhhEAgAABAABGCQAQBIRAICAQIQIhEIBAIhAAAIIAEEAggkIEQCAQiBAIQAARAhAAAQAACEQAAAgCCEAIAEBECQQCAEIQAAEAQAQgEEAIQgEAAQAQhRAAChBBEAERABAJCEAAhQAQAIwAAgQgBQoAABEAIAaAQAAKhhEAEEIEIQQjEAwIEQAQgRCBCBAJBhEAIRAgBABACAAARiAAIQSCEEIAIAECAEQIQiADiRCAQCIRAIBAIhPj/F+7a70i+3hP0AAAAAElFTkSuQmCC'
+
+    // Document Titles
+    doc.setFontSize(22)
+    doc.text('INVOICE', 14, 25)
+    
+    // Attempting to add the image explicitly with proper bounds.
+    // Ensure base64 isn't corrupt and format matches
+    ;(doc as any).addImage({
+      imageData: logoBase64,
+      format: 'PNG',
+      x: 155,
+      y: 10,
+      w: 40,
+      h: 12
+    })
+
+    // Sub-header details
+    doc.setFontSize(10)
+    doc.text(`Invoice ID: #INV-${sale.id.slice(0, 8).toUpperCase()}`, 14, 38)
+    doc.text(`Date: ${new Date(sale.date).toLocaleDateString('en-IN')}`, 14, 44)
+    doc.text(`Supplier: RISS (Royal Iron Steel Supply)`, 14, 50)
+    doc.text(`Buyer: ${sale.party.name}`, 14, 56)
+
+    // Define table columns and rows
+    const tableColumns = ['Commodity', 'Batch ID', 'Quantity', 'Rate', 'GST %', 'Total Amount']
+    const tableRows = [
+      [
+        sale.commodity.replace('_', ' '),
+        sale.batchId || '—',
+        `${formatNumber(Number(sale.quantity))} ${sale.unit}`,
+        `Rs. ${formatNumber(Number(sale.rate))}`,
+        `${sale.gstPercent}%`,
+        `Rs. ${formatNumber(Number(sale.totalAmount))}`,
+      ]
+    ]
+
+    // Render Table
+    autoTable(doc, {
+      head: [tableColumns],
+      body: tableRows,
+      startY: 65,
+      theme: 'grid',
+      headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+      styles: { fontSize: 10, cellPadding: 3, textColor: 50 },
+    })
+
+    const finalY = (doc as any).lastAutoTable.finalY || 80
+
+    // Payment Summary Section
+    const bankAmt = Number(sale.bankAmount)
+    const paidAmt = sale.isPaid ? Number(sale.totalAmount) : (sale as any).payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0
+    const balance = Number(sale.totalAmount) - paidAmt
+
+    doc.setFontSize(11)
+    doc.text(`Total Sale Value: Rs. ${formatNumber(Number(sale.totalAmount))}`, 14, finalY + 15)
+    doc.text(`Payment Through Bank: Rs. ${formatNumber(bankAmt)}`, 14, finalY + 22)
+    
+    doc.setFontSize(12)
+    doc.text(`Amount Received: Rs. ${formatNumber(paidAmt)}`, 14, finalY + 34)
+    if (balance > 0) {
+      doc.setTextColor(220, 53, 69)
+      doc.text(`Balance Due: Rs. ${formatNumber(balance)}`, 14, finalY + 41)
+    } else {
+      doc.setTextColor(40, 167, 69)
+      doc.text(`Status: FULLY PAID`, 14, finalY + 41)
+    }
+
+    // Add faint watermark centered on the page
+    doc.setGState(new (doc as any).GState({ opacity: 0.1 }))
+    // A4 width ~210, height ~297. Image ~100x30
+    doc.addImage(logoBase64, 'PNG', 55, 130, 100, 30)
+    
+    // Save PDF
+    doc.save(`Invoice_${sale.party.name}_${new Date(sale.date).toISOString().split('T')[0]}.pdf`)
+  }
 
   return (
     <AuthLayout>
@@ -198,11 +282,14 @@ export default function SalesPage() {
                 {/* Link to purchase */}
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Link to Purchase Batch (optional)</label>
-                  <select className="input-glass" value={form.purchaseId} onChange={(e) => setForm({ ...form, purchaseId: e.target.value })}>
+                  <select className="input-glass" value={form.purchaseId} onChange={(e) => {
+                    const linkedPurchase = purchases.find(p => p.id === e.target.value)
+                    setForm({ ...form, purchaseId: e.target.value, batchId: linkedPurchase?.batchId || '' })
+                  }}>
                     <option value="">Use WAC (no specific batch)</option>
                     {purchases.filter(p => p.commodity === form.commodity).map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.party.name} - {formatNumber(Number(p.quantity))} @ ₹{formatNumber(Number(p.totalCost))}
+                        {p.batchId ? `[${p.batchId}] ` : ''}{p.party.name} - {formatNumber(Number(p.quantity))} @ ₹{formatNumber(Number(p.totalCost))}
                       </option>
                     ))}
                   </select>
@@ -307,13 +394,30 @@ export default function SalesPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Date</th><th>Commodity</th><th>Qty</th><th>Rate</th><th>GST</th>
+                  <th>Batch ID</th><th>Date</th><th>Commodity</th><th>Qty</th><th>Rate</th><th>GST</th>
                   <th>Total</th><th>Bank</th><th>Cash</th><th>Buyer</th><th>Status</th><th style={{ width: '80px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSales.map((s, i) => (
                   <motion.tr key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}>
+                    <td>
+                      {s.batchId ? (
+                        <span style={{ 
+                          padding: '4px 8px', 
+                          background: 'rgba(68,138,255,0.15)', 
+                          color: 'var(--accent-blue)', 
+                          borderRadius: '4px', 
+                          fontSize: '12px', 
+                          fontWeight: 600,
+                          fontFamily: 'monospace'
+                        }}>
+                          {s.batchId}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>—</span>
+                      )}
+                    </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{new Date(s.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -335,8 +439,11 @@ export default function SalesPage() {
                     <td><span className={`badge ${s.isPaid ? 'badge-green' : 'badge-amber'}`}>{s.isPaid ? 'PAID' : 'PENDING'}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-icon" onClick={() => openEdit(s)} style={{ width: '28px', height: '28px' }}><Edit2 size={14} /></button>
-                        <button className="btn btn-icon" onClick={() => setDeleteId(s.id)} style={{ width: '28px', height: '28px', color: 'var(--accent-red)' }}><Trash2 size={14} /></button>
+                        <button className="btn btn-icon" onClick={() => generateInvoicePDF(s)} style={{ width: '28px', height: '28px', color: 'var(--accent-blue)' }} title="Download Invoice">
+                          <FileText size={14} />
+                        </button>
+                        <button className="btn btn-icon" onClick={() => openEdit(s)} style={{ width: '28px', height: '28px' }} title="Edit Sale"><Edit2 size={14} /></button>
+                        <button className="btn btn-icon" onClick={() => setDeleteId(s.id)} style={{ width: '28px', height: '28px', color: 'var(--accent-red)' }} title="Delete Sale"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </motion.tr>

@@ -9,6 +9,18 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 
+// Helper to load image as Base64 for jsPDF
+const getBase64ImageFromUrl = async (imageUrl: string) => {
+  const res = await fetch(imageUrl)
+  const blob = await res.blob()
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
 const formatNumber = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)
 
 interface LedgerItem {
@@ -92,20 +104,48 @@ export default function ReportsPage() {
   const chartData = getMonthlyData()
 
   // Export to PDF
-  const dwnPDF = () => {
+  const dwnPDF = async () => {
     if (!data) return
-    const doc = new jsPDF()
-    doc.setFontSize(18)
-    doc.text(`Financial Report FY ${data.financialYear}`, 14, 20)
     
+    // Convert public/logo/logo.png to base64
+    let logoBase64 = null
+    try {
+      logoBase64 = await getBase64ImageFromUrl('/logo/logo.png')
+    } catch (e) {
+      console.warn('Could not load logo for PDF', e)
+    }
+
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+
+    // 1. HEADER BRANDING
+    if (logoBase64) {
+      // Add logo to top-left corner
+      // Dimensions: width 35px, height proportional
+      doc.addImage(logoBase64, 'PNG', 14, 10, 35, 35)
+    }
+
+    doc.setFontSize(22)
+    doc.text(`Financial Report FY ${data.financialYear}`, 55, 25)
+    doc.setFontSize(12)
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 55, 32)
+    
+    // KPIs
     doc.setFontSize(11)
-    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28)
-    doc.text(`Total Turnover: Rs. ${formatNumber(data.kpis.totalTurnover)}`, 14, 38)
-    doc.text(`Total Purchases: Rs. ${formatNumber(data.kpis.totalPurchasesCost)}`, 14, 44)
-    doc.text(`Net Profit/Loss: Rs. ${formatNumber(data.kpis.netProfitLoss)}`, 14, 50)
+    doc.text(`Total Turnover: Rs. ${formatNumber(data.kpis.totalTurnover)}`, 14, 52)
+    doc.text(`Total Purchases: Rs. ${formatNumber(data.kpis.totalPurchasesCost)}`, 14, 58)
+    doc.text(`Net Profit/Loss: Rs. ${formatNumber(data.kpis.netProfitLoss)}`, 14, 64)
+
+    // 2. CENTERED WATERMARK FOR THE FIRST PAGE
+    if (logoBase64) {
+      doc.setGState(new (doc as any).GState({ opacity: 0.05 })) // Faint transparency
+      doc.addImage(logoBase64, 'PNG', (pageWidth/2) - 60, (pageHeight/2) - 60, 120, 120)
+      doc.setGState(new (doc as any).GState({ opacity: 1 })) // Reset transparency
+    }
 
     autoTable(doc, {
-      startY: 60,
+      startY: 72,
       head: [['Date', 'Type', 'Description', 'Inflow (Rs)', 'Outflow (Rs)', 'Balance (Rs)']],
       body: data.ledger.map(i => [
         new Date(i.date).toLocaleDateString('en-IN'),
@@ -117,7 +157,15 @@ export default function ReportsPage() {
       ]),
       theme: 'grid',
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [68, 138, 255] }
+      headStyles: { fillColor: [68, 138, 255] },
+      // Automatically add watermark to every new page created by the table
+      didDrawPage: function () {
+        if (logoBase64) {
+          doc.setGState(new (doc as any).GState({ opacity: 0.05 }))
+          doc.addImage(logoBase64, 'PNG', (pageWidth/2) - 60, (pageHeight/2) - 60, 120, 120)
+          doc.setGState(new (doc as any).GState({ opacity: 1 }))
+        }
+      }
     })
 
     doc.save(`RISS_Report_FY_${data.financialYear}.pdf`)
@@ -147,22 +195,61 @@ export default function ReportsPage() {
     setBrainResponse('')
 
     const lines = []
-    lines.push(`🧠 **AI Strategic Deep Dive | FY ${data.financialYear}**\n`)
+    lines.push(`🧠 **AI Strategic Deep Dive | FY ${data.financialYear}**`)
+    lines.push('================================================\n')
     
-    const margin = data.kpis.totalTurnover > 0 ? ((data.kpis.netProfitLoss / data.kpis.totalTurnover) * 100).toFixed(2) : 0
+    // 1. MACRO SUMMARY
+    const margin = data.kpis.totalTurnover > 0 ? ((data.kpis.netProfitLoss / data.kpis.totalTurnover) * 100).toFixed(2) : '0.00'
     lines.push(`✅ **Gross Turnover**: ₹${formatNumber(data.kpis.totalTurnover)}`)
     
     if (data.kpis.netProfitLoss > 0) {
       lines.push(`✨ **Net Profit**: ₹${formatNumber(data.kpis.netProfitLoss)} (Margin: ${margin}%)`)
-      lines.push('💡 AI Insight: Excellent operational scale. Focus next quarter on reducing OD liabilities to boost net margins by 1-2%.')
     } else {
       lines.push(`⚠️ **Net Loss**: ₹${formatNumber(Math.abs(data.kpis.netProfitLoss))}`)
-      lines.push('🚨 Immediate Action Required: Re-evaluate purchasing costs relative to sale pricing. Significant capital drag impacting profitability.')
+      lines.push('🚨 Immediate Action Required: Significant capital drag in this financial year. Review pricing and overheads.')
+    }
+
+    // 2. CASHFLOW & OD THREAT
+    const totalODDraws = data.ledger.filter(l => l.type === 'OD_DRAW').reduce((sum, l) => sum + l.inflow, 0)
+    const totalODRepays = data.ledger.filter(l => l.type === 'OD_REPAY').reduce((sum, l) => sum + l.outflow, 0)
+    lines.push(`\n**Capital Dependency**: ₹${formatNumber(totalODDraws)} drawn from Overdraft this year. (Repaid: ₹${formatNumber(totalODRepays)})`)
+    if (totalODDraws > data.kpis.totalTurnover * 0.5 && data.kpis.totalTurnover > 0) {
+      lines.push('  ❌ [CRITICAL] Dangerously high OD dependency (>50% of turnover). Suggest prioritizing high-velocity, low-margin flips to inject structural cash.')
+    }
+
+    // 3. SELLER GRADING FROM LEDGER
+    const sellerSpend: Record<string, number> = {}
+    data.ledger.filter(l => l.type === 'PURCHASE').forEach(l => {
+      const party = (l as any).rawDetails?.party?.name || 'Unknown'
+      sellerSpend[party] = (sellerSpend[party] || 0) + l.outflow
+    })
+    const topSellers = Object.entries(sellerSpend).sort((a, b) => b[1] - a[1])
+    
+    if (topSellers.length > 0) {
+      lines.push('\n🏆 **Top Capital Destinations (Sellers)**:')
+      topSellers.slice(0, 3).forEach(([name, amt]) => {
+        lines.push(`   - ${name}: ₹${formatNumber(amt)}`)
+      })
+    }
+
+    // 4. BUYER VOLUME FROM LEDGER
+    const buyerRevenue: Record<string, number> = {}
+    data.ledger.filter(l => l.type === 'SALE').forEach(l => {
+      const party = (l as any).rawDetails?.party?.name || 'Unknown'
+      buyerRevenue[party] = (buyerRevenue[party] || 0) + l.inflow
+    })
+    const topBuyers = Object.entries(buyerRevenue).sort((a, b) => b[1] - a[1])
+
+    if (topBuyers.length > 0) {
+      lines.push('\n💎 **Top Revenue Generators (Buyers)**:')
+      topBuyers.slice(0, 3).forEach(([name, amt]) => {
+        lines.push(`   - ${name}: ₹${formatNumber(amt)}`)
+      })
     }
 
     const saleCount = data.ledger.filter(l => l.type === 'SALE').length
     const purCount = data.ledger.filter(l => l.type === 'PURCHASE').length
-    lines.push(`\n**Volume Matrix**: ${saleCount} Sales outpaced by ${purCount} Purchase events.`)
+    lines.push(`\n**Volume Matrix**: Executed ${saleCount} Sales and ${purCount} Purchases during FY ${data.financialYear}.`)
 
     const text = lines.join('\n')
     for (let i = 0; i <= text.length; i += 4) {

@@ -12,13 +12,16 @@ export async function GET() {
       payments,
       parties,
     ] = await Promise.all([
-      prisma.purchase.findMany({ include: { party: true } }),
+      prisma.purchase.findMany({ include: { party: true, sales: true } }),
       prisma.sale.findMany({ include: { party: true, payments: true, purchase: true } }),
       prisma.inventory.findMany(),
       prisma.oDAccount.findMany({ include: { transactions: true } }),
       prisma.payment.findMany(),
-      prisma.party.findMany({ where: { type: 'BUYER' } }),
+      prisma.party.findMany(),
     ])
+
+    const buyers = parties.filter(p => p.type === 'BUYER')
+    const sellers = parties.filter(p => p.type === 'SELLER')
 
     // Total Purchases
     const totalPurchases = purchases.reduce(
@@ -108,7 +111,7 @@ export async function GET() {
       }, 0)
 
     // Buyer DSO calculation
-    const buyerMetrics = parties.map((buyer) => {
+    const buyerMetrics = buyers.map((buyer) => {
       const buyerSales = sales.filter((s) => s.partyId === buyer.id)
       const paidSales = buyerSales.filter((s) => s.isPaid && s.paidDate)
 
@@ -152,6 +155,14 @@ export async function GET() {
       const profitToWait =
         avgDSO > 0 ? buyerMargin / avgDSO : buyerMargin > 0 ? buyerMargin : 0
 
+      // Ideal Customer Profile (ICP) Score out of 100
+      // 40% Volume, 40% Margin, 20% Fast Payment (DSO)
+      const maxPossibleRevenue = sales.reduce((sum, s) => sum + Number(s.totalAmount), 0)
+      const volumeScore = maxPossibleRevenue > 0 ? (totalBuyerRevenue / maxPossibleRevenue) * 40 : 0
+      const marginScore = Math.min((buyerMargin / 20) * 40, 40) // Assume 20% margin is "perfect" score
+      const dsoScore = avgDSO <= 0 ? 20 : Math.max(0, 20 - (avgDSO / 3)) // Lose points past 0 days
+      const icpScore = Math.round(volumeScore + marginScore + dsoScore)
+
       return {
         id: buyer.id,
         name: buyer.name,
@@ -162,18 +173,178 @@ export async function GET() {
         margin: Math.round(buyerMargin * 100) / 100,
         profitToWait: Math.round(profitToWait * 100) / 100,
         isLate: avgDSO > 15,
+        icpScore
       }
     })
 
-    // Inventory summary
-    const inventorySummary = inventory.map((inv) => ({
-      commodity: inv.commodity,
-      unit: inv.unit,
-      quantity: Number(inv.quantity),
-      avgCost: Number(inv.avgCost),
-      totalValue: Math.round(Number(inv.quantity) * Number(inv.avgCost) * 100) / 100,
-    }))
+    // Seller Grading (Supplier Metrics)
+    const sellerMetrics = sellers.map((seller) => {
+      const sellerPurchases = purchases.filter((p) => p.partyId === seller.id)
+      const totalPurchasedVolume = sellerPurchases.reduce((sum, p) => sum + Number(p.quantity), 0)
+      const totalPurchasedValue = sellerPurchases.reduce((sum, p) => sum + Number(p.totalCost), 0)
+
+      // Calculate generated revenue and pure profit from this supplier
+      let generatedRevenue = 0
+      sellerPurchases.forEach(p => {
+        p.sales.forEach(s => {
+          generatedRevenue += Number(s.totalAmount)
+        })
+      })
+      const pureProfit = generatedRevenue > 0 ? generatedRevenue - totalPurchasedValue : 0
+      const roi = totalPurchasedValue > 0 ? (pureProfit / totalPurchasedValue) * 100 : 0
+
+      // Calculate time-to-cash (Velocity) for this supplier's goods
+      let totalFlipDays = 0
+      let flipCount = 0
+      sellerPurchases.forEach(p => {
+        p.sales.forEach(s => {
+          const pDate = new Date(p.date)
+          const sDate = new Date(s.date)
+          totalFlipDays += (sDate.getTime() - pDate.getTime()) / (1000 * 60 * 60 * 24)
+          flipCount++
+        })
+      })
+      const avgFlipDays = flipCount > 0 ? totalFlipDays / flipCount : -1 // -1 means unsold
+
+      return {
+        id: seller.id,
+        name: seller.name,
+        totalPurchasedValue: Math.round(totalPurchasedValue * 100) / 100,
+        volume: totalPurchasedVolume,
+        generatedRevenue: Math.round(generatedRevenue * 100) / 100,
+        roi: Math.round(roi * 100) / 100,
+        avgFlipDays: Math.round(avgFlipDays * 10) / 10
+      }
+    })
+
+    // Commodity Velocity
+    const commodityVelocity = inventory.map(inv => {
+      const commPurchases = purchases.filter(p => p.commodity === inv.commodity)
+      const commSales = sales.filter(s => s.commodity === inv.commodity)
+      
+      const qtyPurchased = commPurchases.reduce((sum, p) => sum + Number(p.quantity), 0)
+      const qtySold = commSales.reduce((sum, s) => sum + Number(s.quantity), 0)
+      const turnoverRate = qtyPurchased > 0 ? (qtySold / qtyPurchased) * 100 : 0
+      
+      // Calculate how many days unsold inventory has been sitting (stagnation)
+      let maxStagnationDays = 0
+      if (Number(inv.quantity) > 0) {
+        commPurchases.forEach(p => {
+          // If this purchase hasn't been completely sold
+          const pSold = p.sales.reduce((sum, s) => sum + Number(s.quantity), 0)
+          if (pSold < Number(p.quantity)) {
+            const ageDays = (Date.now() - new Date(p.date).getTime()) / (1000 * 60 * 60 * 24)
+            if (ageDays > maxStagnationDays) maxStagnationDays = ageDays
+          }
+        })
+      }
+
+      // Calculate Daily Sale Volume (Average over last 30 days)
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      const recentSalesQty = commSales
+        .filter(s => new Date(s.date) >= thirtyDaysAgo)
+        .reduce((sum, s) => sum + Number(s.quantity), 0)
+      const dailySaleVolume = recentSalesQty / 30
+
+      return {
+        commodity: inv.commodity,
+        quantity: Number(inv.quantity),
+        value: Math.round(Number(inv.quantity) * Number(inv.avgCost)),
+        turnoverRate: Math.round(turnoverRate * 100) / 100,
+        stagnationDays: Math.floor(maxStagnationDays),
+        dailySaleVolume // Needed for Smart Restocking
+      }
+    })
+
+    // Pricing Fraud/Anomaly Detector
+    const anomalies: Array<{ type: string; date: string; commodity: string; party: string; variance: number; message: string }> = []
+    
+    inventory.forEach(inv => {
+      const wac = Number(inv.avgCost)
+      if (wac <= 0) return
+
+      // Check recent purchases against WAC
+      purchases.filter(p => p.commodity === inv.commodity).slice(-10).forEach(p => {
+        const unitPrice = Number(p.totalCost) / Number(p.quantity)
+        const variance = ((unitPrice - wac) / wac) * 100
+        if (Math.abs(variance) > 15) {
+          anomalies.push({
+            type: 'PURCHASE',
+            date: p.date.toISOString(),
+            commodity: p.commodity,
+            party: p.party.name,
+            variance: Math.round(variance * 10) / 10,
+            message: `Purchased at ₹${unitPrice.toFixed(2)}/kg (WAC is ₹${wac.toFixed(2)})`
+          })
+        }
+      })
+
+      // Check recent sales against WAC
+      sales.filter(s => s.commodity === inv.commodity).slice(-10).forEach(s => {
+        const unitPrice = Number(s.totalAmount) / Number(s.quantity)
+        const variance = ((unitPrice - wac) / wac) * 100
+        // Flag if sold for LESS than WAC (negative variance)
+        if (variance < -5) {
+          anomalies.push({
+            type: 'SALE_LOSS',
+            date: s.date.toISOString(),
+            commodity: s.commodity,
+            party: s.party.name,
+            variance: Math.round(variance * 10) / 10,
+            message: `Sold at ₹${unitPrice.toFixed(2)}/kg (WAC is ₹${wac.toFixed(2)}). Loss-making sale.`
+          })
+        }
+      })
+    })
+
+    // Cashflow Runway Predictor
+    // Calculate average daily inflows over the last 30 days
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const recentPayments = payments.filter(p => new Date(p.date) >= thirtyDaysAgo)
+    const dailyAvgInflow = recentPayments.reduce((sum, p) => sum + Number(p.amount), 0) / 30
+
+    // Remaining OD availability
+    const availableOD = Math.max(0, totalODLimit - totalODUtilized)
+    
+    // Runway = Available Cash / Net Daily Burn (OD Interest + Operational Estimates - Average Inflows)
+    // If daily inflow > burn, runway is infinite.
+    const netDailyBurn = totalDailyBurn - dailyAvgInflow
+    let runwayDays = -1 // Infinite
+    if (netDailyBurn > 0) {
+      runwayDays = Math.floor(availableOD / netDailyBurn)
+    }
+
+    // OD Threat Analytics
+    const cashInflow = totalPaymentsReceived
+
+    const odThreatScore = cashInflow > 0 ? (totalODUtilized / cashInflow) * 100 : (totalODUtilized > 0 ? 999 : 0)
+    const odThreat = {
+      score: Math.round(odThreatScore * 100) / 100,
+      monthlyBurn: Math.round(totalDailyBurn * 30),
+      isCritical: odThreatScore > 80 || (totalDailyBurn * 30) > totalProfit, // Critical if OD debt > 80% of cash inflows or interest eats all profit
+      runwayDays,
+      dailyAvgInflow: Math.round(dailyAvgInflow)
+    }
+
+
+    // Inventory summary with Restocking Needs
+    const inventorySummary = inventory.map((inv) => {
+      const vData = commodityVelocity.find(v => v.commodity === inv.commodity)
+      const dailyVolume = vData?.dailySaleVolume || 0
+      const runway = dailyVolume > 0 ? Number(inv.quantity) / dailyVolume : 999
+
+      return {
+        commodity: inv.commodity,
+        unit: inv.unit,
+        quantity: Number(inv.quantity),
+        avgCost: Number(inv.avgCost),
+        totalValue: Math.round(Number(inv.quantity) * Number(inv.avgCost) * 100) / 100,
+        stockRunwayDays: Math.floor(runway),
+        needsRestock: runway < 7 && runway > 0 // Less than 7 days of stock left
+      }
+    })
     const totalInventoryValue = inventorySummary.reduce(
+
       (sum, inv) => sum + inv.totalValue,
       0
     )
@@ -244,7 +415,11 @@ export async function GET() {
         accounts: odDetails,
       },
       buyerMetrics: buyerMetrics.sort((a, b) => b.totalRevenue - a.totalRevenue),
+      sellerMetrics: sellerMetrics.sort((a, b) => b.roi - a.roi),
       inventory: inventorySummary,
+      commodityVelocity: commodityVelocity.sort((a, b) => b.stagnationDays - a.stagnationDays),
+      odThreat,
+      anomalies,
       recentTransactions,
       commodityPnL,
       timestamp: new Date().toISOString(),
