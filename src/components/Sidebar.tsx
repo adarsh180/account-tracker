@@ -17,23 +17,59 @@ import {
   LogOut,
   Zap,
   FileText,
+  Telescope,
+  BarChart3,
+  PiggyBank,
+  Building2,
+  Home,
 } from 'lucide-react'
 
-const navItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/inventory', label: 'Inventory', icon: Package },
-  { href: '/purchases', label: 'Purchases', icon: ShoppingCart },
-  { href: '/sales', label: 'Sales', icon: TrendingUp },
-  { href: '/parties', label: 'Parties', icon: Users },
-  { href: '/payments', label: 'Payments', icon: CreditCard },
-  { href: '/overdraft', label: 'Overdraft', icon: Landmark },
-  { href: '/reports', label: 'Reports', icon: FileText },
-  { href: '/brain', label: 'Brain', icon: Brain },
-  { href: '/settings', label: 'Settings', icon: Settings },
+const navSections = [
+  {
+    label: 'Core',
+    items: [
+      { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/inventory', label: 'Inventory', icon: Package },
+      { href: '/purchases', label: 'Purchases', icon: ShoppingCart },
+      { href: '/sales', label: 'Sales', icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Money',
+    items: [
+      { href: '/parties', label: 'Parties', icon: Users },
+      { href: '/payments', label: 'Payments', icon: CreditCard },
+      { href: '/overdraft', label: 'Overdraft', icon: Landmark },
+      { href: '/expenses', label: 'Expenses', icon: Building2 },
+    ],
+  },
+  {
+    label: 'Analytics',
+    items: [
+      { href: '/financials', label: 'Financials', icon: BarChart3 },
+      { href: '/reports', label: 'Reports', icon: FileText },
+      { href: '/vision', label: '₹50Cr Vision', icon: Telescope },
+    ],
+  },
+  {
+    label: 'Personal',
+    items: [
+      { href: '/investments', label: 'Committee', icon: PiggyBank },
+      { href: '/distributions', label: 'Home Cash', icon: Home },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { href: '/brain', label: 'Brain', icon: Brain },
+      { href: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
+  let itemIndex = 0
 
   return (
     <aside className="sidebar">
@@ -64,26 +100,33 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {navItems.map((item, i) => {
-          const isActive = pathname === item.href
-          const Icon = item.icon
-          return (
-            <motion.div
-              key={item.href}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.3 }}
-            >
-              <Link
-                href={item.href}
-                className={isActive ? 'active' : ''}
-              >
-                <Icon className="nav-icon" size={18} />
-                <span>{item.label}</span>
-              </Link>
-            </motion.div>
-          )
-        })}
+        {navSections.map((section) => (
+          <div key={section.label} style={{ marginBottom: '6px' }}>
+            <div className="nav-section-label">{section.label}</div>
+            {section.items.map((item) => {
+              const isActive = pathname === item.href
+              const Icon = item.icon
+              const delay = itemIndex * 0.03
+              itemIndex++
+              return (
+                <motion.div
+                  key={item.href}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay, duration: 0.3 }}
+                >
+                  <Link
+                    href={item.href}
+                    className={isActive ? 'active' : ''}
+                  >
+                    <Icon className="nav-icon" size={18} />
+                    <span>{item.label}</span>
+                  </Link>
+                </motion.div>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="sidebar-footer">

@@ -156,3 +156,77 @@ model AnalysisSnapshot {
 
   @@index([createdAt])
 }
+
+model MonthlyExpense {
+  id          String   @id @default(cuid())
+  month       Int
+  year        Int
+  category    String   // RENT, OD_INTEREST, ELECTRICITY, SALARY, MISC
+  amount      Decimal  @db.Decimal(14, 2)
+  description String?  @db.Text
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([month, year, category])
+  @@index([year])
+  @@index([category])
+}
+
+model CommitteeInvestment {
+  id              String   @id @default(cuid())
+  committeeName   String   @default("Father's Committee")
+  maturityAmount  Decimal  @db.Decimal(14, 2)
+  startDate       DateTime
+  maturityDate    DateTime
+  totalMonths     Int      @default(13)
+  isActive        Boolean  @default(true)
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  payments        CommitteePayment[]
+}
+
+model CommitteePayment {
+  id              String              @id @default(cuid())
+  committeeId     String
+  committee       CommitteeInvestment @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  month           Int
+  year            Int
+  amount          Decimal             @db.Decimal(14, 2)
+  isPaid          Boolean             @default(true)
+  date            DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+
+  @@unique([committeeId, month, year])
+  @@index([committeeId])
+}
+
+model HomeDistribution {
+  id          String   @id @default(cuid())
+  amount      Decimal  @db.Decimal(14, 2)
+  recipient   String   // WIFE, SON, OTHER
+  description String?  @db.Text
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([date])
+}
+
+model VisionMilestone {
+  id                String   @id @default(cuid())
+  fyYear            Int      @unique // e.g. 2026 = FY 2026-2027 start year
+  turnoverTarget    Decimal  @db.Decimal(16, 2) // Revenue target for this FY
+  profitTarget      Decimal  @db.Decimal(16, 2) // Net profit target
+  valuationTarget   Decimal  @db.Decimal(16, 2) // Company valuation target
+  actualTurnover    Decimal? @db.Decimal(16, 2) // Filled in from real data
+  actualProfit      Decimal? @db.Decimal(16, 2)
+  keyGoals          String?  @db.Text           // JSON array of goal strings
+  achievements      String?  @db.Text           // JSON array of achieved items
+  notes             String?  @db.Text
+  isCompleted       Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([fyYear])
+}
