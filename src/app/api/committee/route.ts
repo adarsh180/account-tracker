@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+type FundingSource = 'OWN_SAVINGS' | 'EARNED_MONEY' | 'OD_MONEY' | 'MIXED'
+
+const FUNDING_SOURCES: FundingSource[] = ['OWN_SAVINGS', 'EARNED_MONEY', 'OD_MONEY', 'MIXED']
+
+function amount(value: unknown): number {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function normalizeFundingSource(value: unknown): FundingSource {
+  return FUNDING_SOURCES.includes(value as FundingSource) ? (value as FundingSource) : 'EARNED_MONEY'
+}
+
+function sourceBreakdown(body: Record<string, unknown>, totalAmount: number, source: FundingSource) {
+  const ownSavingsAmount = amount(body.ownSavingsAmount)
+  const earnedMoneyAmount = amount(body.earnedMoneyAmount)
+  const odMoneyAmount = amount(body.odMoneyAmount)
+  const splitTotal = ownSavingsAmount + earnedMoneyAmount + odMoneyAmount
+
+  if (source === 'MIXED' && splitTotal > 0) {
+    return { ownSavingsAmount, earnedMoneyAmount, odMoneyAmount }
+  }
+
+  return {
+    ownSavingsAmount: source === 'OWN_SAVINGS' ? totalAmount : 0,
+    earnedMoneyAmount: source === 'EARNED_MONEY' ? totalAmount : 0,
+    odMoneyAmount: source === 'OD_MONEY' ? totalAmount : 0,
+  }
+}
+
 export async function GET() {
   try {
     const committees = await prisma.committeeInvestment.findMany({
@@ -28,6 +58,9 @@ export async function GET() {
         payments: c.payments.map(p => ({
           ...p,
           amount: Number(p.amount),
+          ownSavingsAmount: Number(p.ownSavingsAmount),
+          earnedMoneyAmount: Number(p.earnedMoneyAmount),
+          odMoneyAmount: Number(p.odMoneyAmount),
         })),
       }
     })
@@ -60,7 +93,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'add_payment') {
-      const { committeeId, month, year, amount, date } = body
+      const { committeeId, month, year, date } = body
+      const paymentAmount = amount(body.amount)
+      const fundingSource = normalizeFundingSource(body.fundingSource)
+      const split = sourceBreakdown(body, paymentAmount, fundingSource)
+
+      if (fundingSource === 'MIXED') {
+        const splitTotal = split.ownSavingsAmount + split.earnedMoneyAmount + split.odMoneyAmount
+        if (Math.abs(splitTotal - paymentAmount) > 1) {
+          return NextResponse.json({ error: 'Mixed source split must equal the payment amount' }, { status: 400 })
+        }
+      }
+
       const payment = await prisma.committeePayment.upsert({
         where: {
           committeeId_month_year: {
@@ -70,7 +114,10 @@ export async function POST(req: NextRequest) {
           },
         },
         update: {
-          amount: parseFloat(amount),
+          amount: paymentAmount,
+          fundingSource,
+          ...split,
+          odAccountId: body.odAccountId ? String(body.odAccountId) : null,
           isPaid: true,
           date: date ? new Date(date) : new Date(),
         },
@@ -78,7 +125,10 @@ export async function POST(req: NextRequest) {
           committeeId,
           month: parseInt(month),
           year: parseInt(year),
-          amount: parseFloat(amount),
+          amount: paymentAmount,
+          fundingSource,
+          ...split,
+          odAccountId: body.odAccountId ? String(body.odAccountId) : null,
           isPaid: true,
           date: date ? new Date(date) : new Date(),
         },

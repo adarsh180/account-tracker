@@ -1,6 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
+
+function num(value: unknown): number {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+async function createDealFromPurchase(body: Record<string, unknown>, purchase: { id: string; batchId: string | null }, totalCost: number) {
+  if (!body.trackDeal) return
+
+  const partnerName = typeof body.dealPartnerName === 'string' ? body.dealPartnerName.trim() : ''
+  const partnerAmount = num(body.dealPartnerAmount)
+
+  await prisma.dealFinance.create({
+    data: {
+      dealName: String(body.dealName || `${body.commodity} purchase ${purchase.batchId || ''}`).trim(),
+      dealType: String(body.dealType || 'DIRECT_PURCHASE'),
+      status: 'OPEN',
+      itemName: String(body.commodity),
+      quantity: num(body.quantity),
+      unit: String(body.unit || 'KG'),
+      purchaseId: purchase.id,
+      dealValue: totalCost,
+      purchaseCost: totalCost,
+      expectedSaleValue: num(body.expectedSaleValue),
+      fundingSource: String(body.fundingSource || 'OWN_MONEY'),
+      ownMoneyAmount: num(body.ownMoneyAmount),
+      earnedMoneyAmount: num(body.earnedMoneyAmount),
+      odMoneyAmount: num(body.odMoneyAmount),
+      odToCashAmount: num(body.odToCashAmount),
+      partnerMoneyAmount: partnerAmount || num(body.partnerMoneyAmount),
+      cashPaidAmount: num(body.cashPaidAmount),
+      onlinePaidAmount: num(body.onlinePaidAmount),
+      sellerPartyName: typeof body.sellerName === 'string' ? body.sellerName : null,
+      profitShareNotes: typeof body.profitShareNotes === 'string' ? body.profitShareNotes : null,
+      notes: typeof body.dealNotes === 'string' ? body.dealNotes : null,
+      date: body.date ? new Date(String(body.date)) : new Date(),
+      partners: partnerName
+        ? {
+            create: [{
+              partnerName,
+              investedAmount: partnerAmount,
+              sharePercent: num(body.dealPartnerShare),
+              expectedReturn: num(body.dealPartnerExpectedReturn),
+            }],
+          }
+        : undefined,
+    },
+  })
+}
 
 export async function GET() {
   try {
@@ -62,6 +110,8 @@ export async function POST(req: NextRequest) {
       },
       include: { party: true },
     })
+
+    await createDealFromPurchase({ ...body, sellerName: purchase.party.name }, purchase, totalCost)
 
     // Update inventory: add quantity and recalculate WAC
     const inventory = await prisma.inventory.findUnique({
@@ -148,6 +198,7 @@ export async function PUT(req: NextRequest) {
     })
     return NextResponse.json(updated)
   } catch (error) {
+    console.error('Failed to update purchase:', error)
     return NextResponse.json({ error: 'Failed to update purchase' }, { status: 500 })
   }
 }
@@ -161,6 +212,7 @@ export async function DELETE(req: NextRequest) {
     await prisma.purchase.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error) {
+    console.error('Failed to delete purchase:', error)
     return NextResponse.json({ error: 'Failed to delete purchase' }, { status: 500 })
   }
 }

@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Royal Iron Steel Supply Command Center
 
-## Getting Started
+Private business ledger and AI command center for purchases, sales, inventory, payments, overdraft, expenses, financial reports, and decision support.
 
-First, run the development server:
+## Local Setup
+
+1. Install dependencies.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Copy `.env.example` to `.env`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Fill your private values in `.env`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+DATABASE_URL="mysql://USER:PASSWORD@HOST:3306/DATABASE"
+NEXTAUTH_SECRET="replace-with-a-long-random-secret"
+NEXTAUTH_URL="http://localhost:3000"
+GOOGLE_AI_API_KEY="your-real-google-ai-key"
+GOOGLE_AI_MODELS="gemma-4-31b-it,gemma-4-26b-it,gemma-3-27b-it"
+```
 
-## Learn More
+4. Push the database schema and run the app.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx prisma db push
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## AI Command Center
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The Brain page calls `/api/brain` only when you click Ask AI or Run. The Google key is read only on the server from `GOOGLE_AI_API_KEY`, so it is not sent to the browser and should never be committed.
 
-## Deploy on Vercel
+Model order is controlled by `GOOGLE_AI_MODELS`. The first model is treated as primary and the rest are fallbacks. If Google rejects or disables one model for your account, the route tries the next model automatically.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Default order:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```env
+GOOGLE_AI_MODELS="gemma-4-31b-it,gemma-4-26b-it,gemma-3-27b-it"
+```
+
+## Vercel Environment Variables
+
+In Vercel, add these under Project Settings, Environment Variables:
+
+```env
+DATABASE_URL
+NEXTAUTH_SECRET
+NEXTAUTH_URL
+GOOGLE_AI_API_KEY
+GOOGLE_AI_MODELS
+```
+
+Use the same model order for `GOOGLE_AI_MODELS`. Add the real API key only in Vercel, not in GitHub.
+
+## Safe GitHub Push
+
+`.env` is ignored by Git. `.env.example` is intentionally committed with placeholders so future setup is clear without exposing credentials.
+
+Before pushing, you can check:
+
+```bash
+git status --short
+git diff -- .env
+```
+
+The second command should show nothing because `.env` must stay untracked.
+
+## Verification
+
+```bash
+npx tsc --noEmit
+npx eslint
+npm run build
+```

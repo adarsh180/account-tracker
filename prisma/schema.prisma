@@ -61,6 +61,7 @@ model Purchase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   sales           Sale[]
+  dealFinances    DealFinance[]
 
   @@index([commodity])
   @@index([partyId])
@@ -91,6 +92,7 @@ model Sale {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   payments      Payment[]
+  dealFinances  DealFinance[]
 
   @@index([commodity])
   @@index([partyId])
@@ -194,12 +196,103 @@ model CommitteePayment {
   month           Int
   year            Int
   amount          Decimal             @db.Decimal(14, 2)
+  fundingSource   String              @default("EARNED_MONEY") // OWN_SAVINGS, EARNED_MONEY, OD_MONEY, MIXED
+  ownSavingsAmount Decimal            @default(0) @db.Decimal(14, 2)
+  earnedMoneyAmount Decimal           @default(0) @db.Decimal(14, 2)
+  odMoneyAmount   Decimal             @default(0) @db.Decimal(14, 2)
+  odAccountId     String?
   isPaid          Boolean             @default(true)
   date            DateTime            @default(now())
   createdAt       DateTime            @default(now())
 
   @@unique([committeeId, month, year])
   @@index([committeeId])
+  @@index([fundingSource])
+  @@index([odAccountId])
+}
+
+model InvestmentUse {
+  id                String   @id @default(cuid())
+  title             String
+  category          String   @default("OTHER") // COMMITTEE, BUSINESS_ASSET, PERSONAL, FAMILY, EMERGENCY, MARKET, OTHER
+  fundingSource     String   @default("EARNED_MONEY") // OWN_SAVINGS, EARNED_MONEY, OD_MONEY, MIXED
+  amount            Decimal  @db.Decimal(14, 2)
+  ownSavingsAmount  Decimal  @default(0) @db.Decimal(14, 2)
+  earnedMoneyAmount Decimal  @default(0) @db.Decimal(14, 2)
+  odMoneyAmount     Decimal  @default(0) @db.Decimal(14, 2)
+  expectedReturn    Decimal? @db.Decimal(14, 2)
+  expectedReturnDate DateTime?
+  odAccountId       String?
+  notes             String?  @db.Text
+  date              DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@index([fundingSource])
+  @@index([odAccountId])
+}
+
+model DealFinance {
+  id                   String        @id @default(cuid())
+  dealName             String
+  dealType             String        @default("DIRECT_PURCHASE") // DIRECT_PURCHASE, OD_TO_CASH_PURCHASE, PARTNERSHIP, BROKERAGE, RESALE
+  status               String        @default("OPEN") // OPEN, CLOSED, CANCELLED
+  itemName             String
+  quantity             Decimal?      @db.Decimal(12, 3)
+  unit                 String?
+  purchaseId           String?
+  purchase             Purchase?     @relation(fields: [purchaseId], references: [id])
+  saleId               String?
+  sale                 Sale?         @relation(fields: [saleId], references: [id])
+  dealValue            Decimal       @default(0) @db.Decimal(14, 2)
+  purchaseCost         Decimal       @default(0) @db.Decimal(14, 2)
+  expectedSaleValue    Decimal       @default(0) @db.Decimal(14, 2)
+  actualSaleValue      Decimal       @default(0) @db.Decimal(14, 2)
+  brokerageAmount      Decimal       @default(0) @db.Decimal(14, 2)
+  fundingSource        String        @default("OWN_MONEY") // OWN_MONEY, OD_MONEY, OD_TO_CASH, PARTNER_MONEY, MIXED, BROKERAGE_ONLY
+  ownMoneyAmount       Decimal       @default(0) @db.Decimal(14, 2)
+  earnedMoneyAmount    Decimal       @default(0) @db.Decimal(14, 2)
+  odMoneyAmount        Decimal       @default(0) @db.Decimal(14, 2)
+  odToCashAmount       Decimal       @default(0) @db.Decimal(14, 2)
+  partnerMoneyAmount   Decimal       @default(0) @db.Decimal(14, 2)
+  cashPaidAmount       Decimal       @default(0) @db.Decimal(14, 2)
+  onlinePaidAmount     Decimal       @default(0) @db.Decimal(14, 2)
+  cashReceivedAmount   Decimal       @default(0) @db.Decimal(14, 2)
+  onlineReceivedAmount Decimal       @default(0) @db.Decimal(14, 2)
+  shownToParty         String?
+  buyerPartyName       String?
+  sellerPartyName      String?
+  profitShareNotes     String?       @db.Text
+  notes                String?       @db.Text
+  date                 DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  partners             DealPartner[]
+
+  @@index([dealType])
+  @@index([fundingSource])
+  @@index([status])
+  @@index([date])
+  @@index([purchaseId])
+  @@index([saleId])
+}
+
+model DealPartner {
+  id             String      @id @default(cuid())
+  dealId         String
+  deal           DealFinance @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  partnerName    String
+  investedAmount Decimal     @default(0) @db.Decimal(14, 2)
+  sharePercent   Decimal     @default(0) @db.Decimal(5, 2)
+  expectedReturn Decimal     @default(0) @db.Decimal(14, 2)
+  actualReturn   Decimal     @default(0) @db.Decimal(14, 2)
+  notes          String?     @db.Text
+  createdAt      DateTime    @default(now())
+
+  @@index([dealId])
+  @@index([partnerName])
 }
 
 model HomeDistribution {

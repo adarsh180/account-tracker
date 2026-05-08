@@ -1,488 +1,672 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import type { CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import AuthLayout from '@/components/AuthLayout'
-import { Brain, Zap, AlertTriangle, TrendingDown, Package, DollarSign, RefreshCw, Activity, Target, SlidersHorizontal, ShieldAlert } from 'lucide-react'
-import { BarChart, Bar, LineChart, Line, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  Brain,
+  CheckCircle2,
+  CircleDollarSign,
+  ClipboardList,
+  DollarSign,
+  LineChart as LineChartIcon,
+  Package,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+  SlidersHorizontal,
+  Sparkles,
+  Target,
+  TrendingDown,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+  ZAxis,
+} from 'recharts'
 
-interface AnalysisData {
+type Severity = 'critical' | 'warning' | 'opportunity' | 'stable'
+type ReportStatus = 'good' | 'watch' | 'danger' | 'neutral'
+
+type AnalysisData = {
   capitalDrag: Array<{ buyer: string; daysLate: number; interestCost: number }>
   inventoryLeakage: Array<{ commodity: string; daysOld: number; value: number }>
-  marginAlerts: Array<{ commodity: string; currentMargin: number; previousMargin: number; change: number }>
+  marginAlerts: Array<{ commodity: string; currentMargin: number; change: number }>
   scatterData: Array<{ name: string; dSO: number; outstanding: number; profitRatio: number }>
-  marginTrendData: Array<{ name: string; Previous: number; Current: number; Predicted: number }>
-  anomalies: Array<any>
-  stateOfTheUnion: any
+  commodityPnLData: Array<{ name: string; Purchases: number; Sales: number; Profit: number }>
+  anomalies: Array<{ type: string; commodity: string; message: string }>
+}
+
+type BusinessAiReport = {
+  title: string
+  modelUsed: string
+  confidence: 'high' | 'medium' | 'low'
+  briefOverview: string
+  commandFocus: string
+  executiveSummary: Array<{ heading: string; value?: string; insight: string }>
+  financialReport: Array<{ heading: string; status: ReportStatus; insight: string; metric?: string }>
+  priorityActions: Array<{ action: string; reason: string; expectedImpact: string }>
+  risks: Array<{ risk: string; severity: 'critical' | 'high' | 'medium' | 'low'; mitigation: string }>
+  opportunities: Array<{ opportunity: string; move: string; expectedUpside: string }>
+  questionsToAskNext: string[]
+}
+
+type BrainApiResponse = {
+  report: BusinessAiReport
+  snapshot: {
+    summary: {
+      totalSales: number
+      grossProfit: number
+      profitMargin: number
+      outstandingReceivables: number
+      inventoryValue: number
+    }
+    overdraft: {
+      utilizationPercent: number
+      monthlyInterestBurn: number
+    }
+    financialYear: {
+      label: string
+      netProfit: number
+      netMargin: number
+    }
+    issues: Array<{ title: string; severity: Severity; detail: string }>
+  }
+}
+
+type DashboardBuyerMetric = {
+  name: string
+  avgDSO: number
+  outstanding: number
+  profitToWait: number
+}
+
+type DashboardCommodityVelocity = {
+  commodity: string
+  quantity: number
+  stagnationDays: number
+  value: number
+}
+
+type DashboardCommodityPnl = {
+  purchases: number
+  sales: number
+  profit: number
+}
+
+type DashboardAnomaly = {
+  type: string
+  commodity: string
+  message: string
+}
+
+type DashboardData = {
+  summary?: {
+    totalProfit?: number
+    totalSales?: number
+    profitMargin?: number
+  }
+  overdraft?: {
+    totalUtilized?: number
+    dailyBurn?: number
+  }
+  buyerMetrics?: DashboardBuyerMetric[]
+  commodityVelocity?: DashboardCommodityVelocity[]
+  commodityPnL?: Record<string, DashboardCommodityPnl>
+  anomalies?: DashboardAnomaly[]
+}
+
+function formatCurrency(value: number) {
+  return `Rs. ${Math.round(value || 0).toLocaleString('en-IN')}`
+}
+
+function formatCompactCurrency(value: number) {
+  const amount = Math.abs(value || 0)
+  if (amount >= 10000000) return `Rs. ${(value / 10000000).toFixed(2)} Cr`
+  if (amount >= 100000) return `Rs. ${(value / 100000).toFixed(2)} L`
+  return formatCurrency(value)
+}
+
+function severityColor(severity: Severity | 'critical' | 'high' | 'medium' | 'low') {
+  if (severity === 'critical' || severity === 'high') return 'var(--accent-red)'
+  if (severity === 'warning' || severity === 'medium') return 'var(--accent-amber)'
+  if (severity === 'opportunity') return 'var(--accent-blue)'
+  return 'var(--accent-green)'
+}
+
+function statusColor(status: ReportStatus) {
+  if (status === 'danger') return 'var(--accent-red)'
+  if (status === 'watch') return 'var(--accent-amber)'
+  if (status === 'good') return 'var(--accent-green)'
+  return 'var(--accent-blue)'
+}
+
+function sanitizeUiText(value: string) {
+  return value.replace(/[*#`_~|<>]/g, '').trim()
 }
 
 export default function BrainPage() {
-  const [dashData, setDashData] = useState<any>(null)
+  const [dashData, setDashData] = useState<DashboardData | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null)
   const [loading, setLoading] = useState(true)
   const [consulting, setConsulting] = useState(false)
-  const [brainResponse, setBrainResponse] = useState('')
+  const [question, setQuestion] = useState('')
+  const [aiResult, setAiResult] = useState<BrainApiResponse | null>(null)
+  const [aiError, setAiError] = useState('')
 
-  // What-If Simulator State
   const [simMarginBump, setSimMarginBump] = useState(0)
   const [simODRate, setSimODRate] = useState(10.5)
-  const [simProjection, setSimProjection] = useState<{ profitDiff: number, odDiff: number } | null>(null)
 
   useEffect(() => {
     fetch('/api/dashboard')
-      .then(r => r.json())
-      .then(data => {
+      .then((response) => response.json())
+      .then((data: DashboardData) => {
         setDashData(data)
-        generateAnalysis(data)
+        setAnalysis(generateAnalysis(data))
         setLoading(false)
       })
       .catch(() => setLoading(false))
   }, [])
 
-  const generateAnalysis = (data: any) => {
-    const buyerMetrics = data.buyerMetrics || []
-    const commodityVelocity = data.commodityVelocity || []
-    const commodityPnL = data.commodityPnL || {}
+  const simProjection = useMemo(() => {
+    if (!dashData?.summary || !dashData?.overdraft) return null
 
-    const capitalDrag = buyerMetrics
-      .filter((b: any) => b.avgDSO > 7 && b.outstanding > 0)
-      .map((b: any) => ({
-        buyer: b.name,
-        daysLate: b.avgDSO - 7,
-        interestCost: Math.round((b.outstanding * 0.105 * (b.avgDSO - 7)) / 365),
-      }))
-
-    const inventoryLeakage = commodityVelocity
-      .filter((inv: any) => inv.quantity > 0 && inv.stagnationDays > 14)
-      .map((inv: any) => ({
-        commodity: inv.commodity,
-        daysOld: inv.stagnationDays,
-        value: inv.value,
-      }))
-
-    const marginAlerts = Object.entries(commodityPnL)
-      .filter(([, pnl]: any) => pnl.sales > 0 && pnl.purchases > 0)
-      .map(([commodity, pnl]: any) => {
-        const currentMargin = ((pnl.profit / pnl.sales) * 100)
-        return {
-          commodity,
-          currentMargin: Math.round(currentMargin * 100) / 100,
-          previousMargin: Math.round((currentMargin + (Math.random() * 4 - 2)) * 100) / 100,
-          change: Math.round((Math.random() * 6 - 3) * 100) / 100,
-        }
-      })
-
-    const scatterData = buyerMetrics.map((b: any) => ({
-      name: b.name,
-      dSO: b.avgDSO || 0,
-      outstanding: b.outstanding || 0,
-      profitRatio: b.profitToWait || 1
-    }))
-
-    const marginTrendData = marginAlerts.map((ma: any) => {
-      const predicted = ma.currentMargin + (ma.currentMargin - ma.previousMargin) * 1.5
-      return {
-        name: ma.commodity.replace('_', ' '),
-        Previous: ma.previousMargin,
-        Current: ma.currentMargin,
-        Predicted: Math.round(predicted * 100) / 100
-      }
-    })
-
-    setAnalysis({ capitalDrag, inventoryLeakage, marginAlerts, scatterData, marginTrendData, anomalies: data.anomalies || [], stateOfTheUnion: data })
-  }
-
-  // Calculate What-If Scenarios
-  useEffect(() => {
-    if (!dashData?.summary) return
-    const currentProfit = dashData.summary.totalProfit
-    const currentSales = dashData.summary.totalSales
-    
-    // Simulate Margin Bump
-    const newProfitMargin = dashData.summary.profitMargin + simMarginBump
+    const currentProfit = Number(dashData.summary.totalProfit || 0)
+    const currentSales = Number(dashData.summary.totalSales || 0)
+    const newProfitMargin = Number(dashData.summary.profitMargin || 0) + simMarginBump
     const simulatedProfit = (currentSales * newProfitMargin) / 100
     const profitDiff = simulatedProfit - currentProfit
+    const totalOD = Number(dashData.overdraft.totalUtilized || 0)
+    const currentODBurn = Number(dashData.overdraft.dailyBurn || 0) * 30
+    const newODBurn = totalOD * (simODRate / 365 / 100) * 30
 
-    // Simulate OD Rate Change
-    const totalOD = dashData.overdraft.totalUtilized
-    const currentODBurn = dashData.overdraft.dailyBurn * 30 // monthly
-    const newODBurn = (totalOD * (simODRate / 365 / 100)) * 30
-    const odDiff = currentODBurn - newODBurn // Positive means we saved money
-
-    setSimProjection({ profitDiff, odDiff })
-  }, [simMarginBump, simODRate, dashData])
+    return {
+      profitDiff,
+      odDiff: currentODBurn - newODBurn,
+    }
+  }, [dashData, simMarginBump, simODRate])
 
   const consultBrain = async () => {
-    if (!dashData) return
     setConsulting(true)
-    setBrainResponse('')
+    setAiError('')
 
-    const summary = dashData.summary
-    const odThreat = dashData.odThreat
-    const buyers = dashData.buyerMetrics || []
-    const sellers = dashData.sellerMetrics || []
-    const velocity = dashData.commodityVelocity || []
-
-    const lines = []
-    lines.push('🎯 **THE ULTIMATE BRAIN: STRATEGY & DIAGNOSTICS**')
-    lines.push('================================================\n')
-
-    // CATEGORY 1: EMERGENCY ALERTS
-    lines.push('🚨 **CATEGORY 1: EMERGENCY ALERTS (Immediate Action Required)**')
-    let hasAlert = false
-    if (odThreat && odThreat.isCritical) {
-      lines.push(`  ❌ [CRITICAL] Overdraft Threat: OD utilization is dangerously high relative to cash inflows. Interest drag is ₹${odThreat.monthlyBurn}/mo!`)
-      hasAlert = true
-    }
-    if (summary && summary.totalProfit <= 0 && summary.totalSales > 0) {
-      lines.push(`  ❌ [CRITICAL] Margin Collapse: You are operating at a net loss. Gross sales (₹${summary.totalSales.toLocaleString('en-IN')}) are outpaced by purchase/overhead costs.`)
-      hasAlert = true
-    }
-    const stagnantInv = velocity.filter((v: any) => v.stagnationDays > 30 && v.quantity > 0)
-    if (stagnantInv.length > 0) {
-      const tiedUp = stagnantInv.reduce((sum: number, v: any) => sum + v.value, 0)
-      lines.push(`  ⚠️ [WARNING] Dead Capital: ₹${tiedUp.toLocaleString('en-IN')} tied up in inventory sitting for >30 days. Liquidate to pay down OD.`)
-      hasAlert = true
-    }
-    if (!hasAlert) lines.push('  ✅ No critical emergencies detected. Business health is stable.\n')
-    else lines.push('')
-
-    // CATEGORY 2: THE ACTION PLAN
-    lines.push('📋 **CATEGORY 2: TACTICAL ACTION PLAN (Short-Term)**')
-    
-    // 2a. Collections Hit List
-    const hitList = buyers.filter((b: any) => b.outstanding > 0 && b.avgDSO > 15).sort((a: any, b: any) => b.outstanding - a.outstanding).slice(0, 3)
-    if (hitList.length > 0) {
-      lines.push('  **📞 Who to Call Today (Collection Hit-List):**')
-      hitList.forEach((b: any) => {
-        lines.push(`   - ${b.name}: Owes ₹${b.outstanding.toLocaleString('en-IN')} (Avg ${b.avgDSO} days late). Recovering this reduces OD interest drastically.`)
+    try {
+      const response = await fetch('/api/brain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
       })
-      lines.push('')
-    } else {
-      lines.push('  ✅ Collections on track. No severe late payers.\n')
-    }
 
-    // 2b. Restocking Assistant
-    const restockList = (dashData.inventory || []).filter((inv: any) => inv.needsRestock).sort((a: any, b: any) => a.stockRunwayDays - b.stockRunwayDays)
-    if (restockList.length > 0) {
-      lines.push('  **🛒 Smart Restocking Alert:**')
-      restockList.forEach((inv: any) => {
-        lines.push(`   - ${inv.commodity.replace('_', ' ')}: Only ${inv.stockRunwayDays} days of runway left based on recent sales velocity. Procure immediately.`)
-      })
-      lines.push('')
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'The command center could not run.')
+      setAiResult(data)
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'The command center could not run.')
+    } finally {
+      setConsulting(false)
     }
-
-    const dumpList = stagnantInv.sort((a: any, b: any) => b.stagnationDays - a.stagnationDays).slice(0, 3)
-    if (dumpList.length > 0) {
-      lines.push('  **📦 What to Sell Now (Liquidation Targets):**')
-      dumpList.forEach((v: any) => {
-        lines.push(`   - ${v.commodity.replace('_', ' ')}: Sitting for ${v.stagnationDays} days (₹${v.value.toLocaleString('en-IN')}). Sell at breakeven to recover capital.`)
-      })
-      lines.push('')
-    }
-
-    // CATEGORY 3: EXECUTIVE STRATEGY
-    lines.push('♟️ **CATEGORY 3: EXECUTIVE STRATEGY (Long-Term)**')
-    let stratGenerated = false
-    const bestSellers = sellers.filter((s: any) => s.roi > 0 && s.avgFlipDays > 0 && s.avgFlipDays < 30).sort((a: any, b: any) => b.roi - a.roi)
-    if (bestSellers.length > 0) {
-      lines.push('  **🏆 Top Tier Suppliers (Buy more from them):**')
-      bestSellers.slice(0, 2).forEach((s: any) => {
-        lines.push(`   - ${s.name}: Generates ${s.roi}% ROI, flipping in just ${s.avgFlipDays} days. High velocity, high profit.`)
-      })
-      stratGenerated = true
-    }
-    
-    const worstSellers = sellers.filter((s: any) => s.avgFlipDays > 45).sort((a: any, b: any) => b.avgFlipDays - a.avgFlipDays)
-    if (worstSellers.length > 0) {
-      if (stratGenerated) lines.push('')
-      lines.push('  **🛑 Worst Supplier Velocity (Negotiate or drop):**')
-      worstSellers.slice(0, 2).forEach((s: any) => {
-        lines.push(`   - ${s.name}: Sourced material takes ${s.avgFlipDays} days to flip on average, burning a hole in capital.`)
-      })
-      stratGenerated = true
-    }
-
-    // 3b. Ideal Customer Profile (ICP)
-    if (stratGenerated) lines.push('')
-    const icpWinners = buyers.filter((b: any) => b.icpScore > 0).sort((a: any, b: any) => b.icpScore - a.icpScore).slice(0, 3)
-    if (icpWinners.length > 0) {
-      lines.push('  **🌟 Ideal Customer Profile (Your MVP Buyers):**')
-      icpWinners.forEach((b: any, index: number) => {
-        lines.push(`   ${index + 1}. ${b.name} (Score: ${b.icpScore}/100) — Prioritize retaining this client with bulk discounts.`)
-      })
-      stratGenerated = true
-    }
-
-    // 4. CASHFLOW RUNWAY PREDICTOR
-    lines.push('\n⏳ **CASHFLOW RUNWAY PREDICTOR**')
-    if (odThreat && odThreat.runwayDays !== undefined) {
-      if (odThreat.runwayDays === -1) {
-        lines.push(`  ✅ Cashflow is structurally positive. Average daily inflows (₹${odThreat.dailyAvgInflow}) exceed daily OD/Operational burn!`)
-      } else {
-        lines.push(`  ⚠️ WARNING: At current daily burn rates vs inflows, you have **${odThreat.runwayDays} days** until you hit your absolute Overdraft maximum limit. Accelerated sales required.`)
-      }
-    } else {
-      lines.push('  Not enough data to calculate runway.')
-    }
-
-    if (!stratGenerated) lines.push('  Not enough data to calculate supplier grading yet. Record more linked sales and purchases.')
-
-    if (lines.length <= 15) {
-      lines.push('\n💡 **Recommendation**: Start recording purchases and sales across different parties to give The Brain more data to process.')
-    }
-
-    // Simulate typing effect
-    const fullText = lines.join('\n')
-    for (let i = 0; i < fullText.length; i += 4) {
-      await new Promise(r => setTimeout(r, 10))
-      setBrainResponse(fullText.slice(0, i + 4))
-    }
-    setBrainResponse(fullText)
-    setConsulting(false)
   }
 
   return (
     <AuthLayout>
       <div className="page-container">
-        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="page-header brain-header">
           <div>
             <motion.h1 className="page-title" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <Brain size={28} style={{ display: 'inline', marginRight: '10px', verticalAlign: 'middle', color: 'var(--accent-purple)' }} />
-              The Brain
+              <Brain size={28} className="brain-title-icon" />
+              AI Command Center
             </motion.h1>
-            <p className="page-subtitle">Algorithmic Heuristics · Deep Business Diagnostics</p>
+            <p className="page-subtitle">Gemma business intelligence for finance, stock, collections, OD, and growth decisions</p>
           </div>
-          <motion.button
-            className="btn btn-primary btn-lg"
-            onClick={consultBrain}
-            disabled={consulting || loading}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            style={{ gap: '8px', background: 'linear-gradient(135deg, rgba(179,136,255,0.25), rgba(68,138,255,0.2))' }}
-          >
+          <div className="brain-header-actions">
+            <span className="badge badge-purple">gemma-for-business</span>
+            <button className="btn btn-primary btn-lg" onClick={consultBrain} disabled={consulting || loading}>
+              {consulting ? <RefreshCw size={16} className="spinning" /> : <Sparkles size={16} />}
+              {consulting ? 'Thinking' : 'Ask AI'}
+            </button>
+          </div>
+        </div>
+
+        <div className="brain-prompt glass-card-flat">
+          <div className="brain-prompt-icon">
+            <Send size={18} />
+          </div>
+          <textarea
+            className="input-glass brain-prompt-input"
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder="Ask what you want to know, for example: which buyer should I call today, what stock should I move first, or how can I reduce OD pressure this month."
+          />
+          <button className="btn btn-primary" onClick={consultBrain} disabled={consulting || loading}>
             {consulting ? <RefreshCw size={16} className="spinning" /> : <Zap size={16} />}
-            {consulting ? 'Analyzing...' : 'Consult the Brain'}
-          </motion.button>
+            Run
+          </button>
         </div>
 
         {loading ? (
-          <div className="stats-grid">{[...Array(3)].map((_, i) => <div key={i} className="shimmer" style={{ height: '160px' }} />)}</div>
+          <div className="stats-grid">{[...Array(4)].map((_, index) => <div key={index} className="shimmer" style={{ height: '160px' }} />)}</div>
         ) : (
           <>
-            {/* Alert Cards */}
-            <div className="stats-grid" style={{ marginBottom: '24px' }}>
-              {/* Capital Drag */}
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--accent-red-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <DollarSign size={18} color="var(--accent-red)" />
-                  </div>
-                  <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Capital Drag</h3>
-                </div>
-                {analysis?.capitalDrag.length === 0 ? (
-                  <p style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>No capital drag detected</p>
-                ) : (
-                  analysis?.capitalDrag.map((cd, i) => (
-                    <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '13px' }}>
-                      <span style={{ color: 'var(--accent-amber)' }}>{cd.buyer}</span> — {cd.daysLate}d late, costs ~₹{cd.interestCost}/cycle
-                    </div>
-                  ))
-                )}
-              </motion.div>
-
-              {/* Inventory Leakage */}
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--accent-amber-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Package size={18} color="var(--accent-amber)" />
-                  </div>
-                  <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Inventory Leakage</h3>
-                </div>
-                {analysis?.inventoryLeakage.length === 0 ? (
-                  <p style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>All inventory moving well</p>
-                ) : (
-                  analysis?.inventoryLeakage.map((il, i) => (
-                    <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '13px' }}>
-                      <span style={{ color: 'var(--accent-amber)' }}>{il.commodity.replace('_', ' ')}</span> — {il.daysOld}d old, ₹{il.value.toLocaleString('en-IN')} tied up
-                    </div>
-                  ))
-                )}
-              </motion.div>
-
-              {/* Margin Alerts */}
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--accent-purple-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <TrendingDown size={18} color="var(--accent-purple)" />
-                  </div>
-                  <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Margin Alerts</h3>
-                </div>
-                {analysis?.marginAlerts.length === 0 ? (
-                  <p style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>No margin changes detected</p>
-                ) : (
-                  analysis?.marginAlerts.map((ma, i) => (
-                    <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '13px' }}>
-                      <span>{ma.commodity.replace('_', ' ')}</span> — {ma.currentMargin}% margin
-                      <span style={{ marginLeft: '6px', color: ma.change >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        ({ma.change >= 0 ? '+' : ''}{ma.change}%)
-                      </span>
-                    </div>
-                  ))
-                )}
-              </motion.div>
-
-              {/* Pricing Anomalies (Fraud Scanner) */}
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--accent-red-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <ShieldAlert size={18} color="var(--accent-red)" />
-                  </div>
-                  <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Pricing Anomalies</h3>
-                </div>
-                {analysis?.anomalies.length === 0 ? (
-                  <p style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>No pricing irregularities detected</p>
-                ) : (
-                  analysis?.anomalies.map((anom, i) => (
-                    <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '13px' }}>
-                      <span style={{ color: anom.type === 'SALE_LOSS' ? 'var(--accent-red)' : 'var(--accent-amber)' }}>{anom.commodity.replace('_', ' ')}</span> — {anom.message}
-                    </div>
-                  ))
-                )}
-              </motion.div>
-            </div>
-
-            {/* Predictive & Visual Models */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '24px', marginBottom: '24px' }}>
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                  <Target size={20} color="var(--accent-blue)" />
-                  <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Capital Risk Matrix</h3>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>Outstanding Balance (Y) vs Days Sales Outstanding (X). Bubble size = Profit-to-Wait ratio.</p>
-                <div style={{ height: '300px', width: '100%' }}>
-                  <ResponsiveContainer>
-                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                      <XAxis type="number" dataKey="dSO" name="DSO (Days)" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
-                      <YAxis type="number" dataKey="outstanding" name="Outstanding (₹)" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} tickFormatter={(val) => `₹${(val/1000).toFixed(0)}k`} />
-                      <ZAxis type="number" dataKey="profitRatio" range={[50, 400]} name="Profit/Wait" />
-                      <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: 'rgba(10,10,10,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} itemStyle={{ color: 'var(--text-primary)' }} />
-                      <Scatter name="Buyers" data={analysis?.scatterData || []} fill="var(--accent-blue)" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-              </motion.div>
-
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                  <Activity size={20} color="var(--accent-green)" />
-                  <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Margin Forecaster</h3>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>AI Predictive projection of commodity profit margins based on WAC momentum.</p>
-                <div style={{ height: '300px', width: '100%' }}>
-                  <ResponsiveContainer>
-                    <LineChart data={analysis?.marginTrendData || []} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
-                      <YAxis stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} tickFormatter={(val) => `${val}%`} />
-                      <RechartsTooltip contentStyle={{ backgroundColor: 'rgba(10,10,10,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
-                      <Legend wrapperStyle={{ fontSize: '12px', opacity: 0.8 }} />
-                      <Line type="monotone" dataKey="Previous" stroke="rgba(255,255,255,0.3)" strokeWidth={2} dot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="Current" stroke="var(--accent-green)" strokeWidth={3} dot={{ r: 5 }} />
-                      <Line type="monotone" dataKey="Predicted" stroke="var(--accent-purple)" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </motion.div>
-
-              {/* What-If Scenario Simulator */}
-              <motion.div className="glass-card" style={{ padding: '24px' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                  <SlidersHorizontal size={20} color="var(--accent-amber)" />
-                  <h3 style={{ fontSize: '16px', fontWeight: 700 }}>"What-If" CFO Simulator</h3>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>Drag sliders to project exact profit differentials based on this year's ledger volume.</p>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {/* Margin Slider */}
-                  <div style={{ padding: '16px', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Shift Gross Margin</span>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: simMarginBump >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>{simMarginBump > 0 ? '+' : ''}{simMarginBump}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="-5" max="10" step="0.5" 
-                      value={simMarginBump} 
-                      onChange={(e) => setSimMarginBump(Number(e.target.value))}
-                      style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-purple)' }} 
-                    />
-                    {simProjection && simMarginBump !== 0 && (
-                      <div style={{ marginTop: '8px', fontSize: '12px', color: simProjection.profitDiff >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        👉 {simProjection.profitDiff >= 0 ? '+' : '-'}₹{Math.abs(Math.round(simProjection.profitDiff)).toLocaleString('en-IN')} net profit
-                      </div>
-                    )}
-                  </div>
-
-                  {/* OD Rate Slider */}
-                  <div style={{ padding: '16px', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Negotiate OD Interest</span>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-blue)' }}>{simODRate}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="6" max="18" step="0.5" 
-                      value={simODRate} 
-                      onChange={(e) => setSimODRate(Number(e.target.value))}
-                      style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-blue)' }} 
-                    />
-                    {simProjection && simODRate !== 10.5 && (
-                      <div style={{ marginTop: '8px', fontSize: '12px', color: simProjection.odDiff >= 0 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
-                        👉 {simProjection.odDiff > 0 ? 'Saves' : 'Costs'} ₹{Math.abs(Math.round(simProjection.odDiff)).toLocaleString('en-IN')} / month
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Brain Console */}
-            {brainResponse && (
-              <motion.div
-                className="glass-card iridescent-border"
-                style={{ padding: '28px', marginBottom: '24px' }}
-                initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                  <Brain size={20} color="var(--accent-purple)" />
-                  <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Executive Analysis Report</h3>
-                  <span className="pulse-dot" style={{ background: consulting ? 'var(--accent-amber)' : 'var(--accent-green)' }} />
-                </div>
-                <div style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '14px',
-                  lineHeight: '1.8',
-                  color: 'var(--text-secondary)',
-                  whiteSpace: 'pre-wrap',
-                  padding: '24px',
-                  background: 'rgba(0,0,0,0.4)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid rgba(179,136,255,0.15)',
-                  maxHeight: '500px',
-                  overflow: 'auto',
-                  boxShadow: 'inset 0 0 40px rgba(0,0,0,0.5)'
-                }}>
-                  {brainResponse}
-                </div>
-              </motion.div>
+            <LocalSignalCards analysis={analysis} />
+            <ModelCharts analysis={analysis} />
+            <Simulator
+              simMarginBump={simMarginBump}
+              setSimMarginBump={setSimMarginBump}
+              simODRate={simODRate}
+              setSimODRate={setSimODRate}
+              simProjection={simProjection}
+            />
+            {aiError && (
+              <div className="glass-card brain-error">
+                <AlertTriangle size={18} />
+                <span>{aiError}</span>
+              </div>
             )}
+            {aiResult && <AiReportPanel data={aiResult} onAsk={(nextQuestion) => setQuestion(nextQuestion)} />}
           </>
         )}
       </div>
     </AuthLayout>
+  )
+}
+
+function generateAnalysis(data: DashboardData): AnalysisData {
+  const buyerMetrics = data.buyerMetrics || []
+  const commodityVelocity = data.commodityVelocity || []
+  const commodityPnL = data.commodityPnL || {}
+
+  const capitalDrag = buyerMetrics
+    .filter((buyer) => buyer.avgDSO > 7 && buyer.outstanding > 0)
+    .map((buyer) => ({
+      buyer: buyer.name,
+      daysLate: buyer.avgDSO - 7,
+      interestCost: Math.round((buyer.outstanding * 0.105 * (buyer.avgDSO - 7)) / 365),
+    }))
+
+  const inventoryLeakage = commodityVelocity
+    .filter((item) => item.quantity > 0 && item.stagnationDays > 14)
+    .map((item) => ({
+      commodity: item.commodity,
+      daysOld: item.stagnationDays,
+      value: item.value,
+    }))
+
+  const marginAlerts = Object.entries(commodityPnL)
+    .filter(([, pnl]) => pnl.sales > 0)
+    .map(([commodity, pnl]) => {
+      const currentMargin = pnl.sales > 0 ? (pnl.profit / pnl.sales) * 100 : 0
+      const velocity = commodityVelocity.find((item) => item.commodity === commodity)
+      const stagnationDays = velocity?.stagnationDays ?? 0
+      const stagnationPenalty = stagnationDays > 30 ? 2 : stagnationDays > 14 ? 1 : 0
+
+      return {
+        commodity,
+        currentMargin: Math.round(currentMargin * 100) / 100,
+        change: Math.round((currentMargin - stagnationPenalty) * 100) / 100,
+      }
+    })
+
+  const scatterData = buyerMetrics.map((buyer) => ({
+    name: buyer.name,
+    dSO: buyer.avgDSO || 0,
+    outstanding: buyer.outstanding || 0,
+    profitRatio: Math.max(1, buyer.profitToWait || 1),
+  }))
+
+  const commodityPnLData = Object.entries(commodityPnL)
+    .filter(([, pnl]) => pnl.sales > 0 || pnl.purchases > 0)
+    .map(([commodity, pnl]) => ({
+      name: commodity.replaceAll('_', ' '),
+      Purchases: Math.round(pnl.purchases || 0),
+      Sales: Math.round(pnl.sales || 0),
+      Profit: Math.round(pnl.profit || 0),
+    }))
+
+  return {
+    capitalDrag,
+    inventoryLeakage,
+    marginAlerts,
+    scatterData,
+    commodityPnLData,
+    anomalies: data.anomalies || [],
+  }
+}
+
+function LocalSignalCards({ analysis }: { analysis: AnalysisData | null }) {
+  const cards = [
+    {
+      title: 'Capital Drag',
+      icon: DollarSign,
+      color: 'var(--accent-red)',
+      empty: 'No capital drag detected',
+      items: analysis?.capitalDrag.map((item) => ({
+        label: item.buyer,
+        detail: `${item.daysLate} days late, interest drag near ${formatCurrency(item.interestCost)}`,
+      })),
+    },
+    {
+      title: 'Inventory Leakage',
+      icon: Package,
+      color: 'var(--accent-amber)',
+      empty: 'All inventory is moving well',
+      items: analysis?.inventoryLeakage.map((item) => ({
+        label: item.commodity.replaceAll('_', ' '),
+        detail: `${item.daysOld} days old, ${formatCurrency(item.value)} tied up`,
+      })),
+    },
+    {
+      title: 'Margin Alerts',
+      icon: TrendingDown,
+      color: 'var(--accent-purple)',
+      empty: 'No margin pressure detected',
+      items: analysis?.marginAlerts.map((item) => ({
+        label: item.commodity.replaceAll('_', ' '),
+        detail: `${item.currentMargin}% current margin`,
+      })),
+    },
+    {
+      title: 'Pricing Anomalies',
+      icon: ShieldAlert,
+      color: 'var(--accent-blue)',
+      empty: 'No pricing irregularities detected',
+      items: analysis?.anomalies.map((item) => ({
+        label: item.commodity.replaceAll('_', ' '),
+        detail: item.message,
+      })),
+    },
+  ]
+
+  return (
+    <div className="stats-grid brain-signal-grid">
+      {cards.map((card, index) => {
+        const Icon = card.icon
+        const items = card.items || []
+
+        return (
+          <motion.div
+            key={card.title}
+            className="glass-card brain-signal-card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+          >
+            <div className="brain-card-heading">
+              <div className="brain-card-icon" style={{ color: card.color, background: `${card.color}22` }}>
+                <Icon size={18} />
+              </div>
+              <h3>{card.title}</h3>
+            </div>
+            {items.length === 0 ? (
+              <p className="brain-muted">{card.empty}</p>
+            ) : (
+              <div className="brain-mini-list">
+                {items.slice(0, 4).map((item, itemIndex) => (
+                  <div key={`${card.title}-${itemIndex}`} className="brain-mini-item">
+                    <span>{sanitizeUiText(item.label)}</span>
+                    <small>{sanitizeUiText(item.detail)}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ModelCharts({ analysis }: { analysis: AnalysisData | null }) {
+  return (
+    <div className="brain-chart-grid">
+      <motion.div className="glass-card brain-chart-card" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}>
+        <div className="brain-section-heading">
+          <Target size={20} color="var(--accent-blue)" />
+          <div>
+            <h3>Capital Risk Matrix</h3>
+            <p>Outstanding balance against payment delay, sized by profit to wait ratio.</p>
+          </div>
+        </div>
+        <div className="brain-chart">
+          <ResponsiveContainer>
+            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis type="number" dataKey="dSO" name="DSO" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
+              <YAxis type="number" dataKey="outstanding" name="Outstanding" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+              <ZAxis type="number" dataKey="profitRatio" range={[60, 420]} name="Profit Wait" />
+              <RechartsTooltip contentStyle={{ backgroundColor: 'rgba(10,10,10,0.92)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
+              <Scatter name="Buyers" data={analysis?.scatterData || []} fill="var(--accent-blue)" />
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+      </motion.div>
+
+      <motion.div className="glass-card brain-chart-card" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.05 }}>
+        <div className="brain-section-heading">
+          <LineChartIcon size={20} color="var(--accent-green)" />
+          <div>
+            <h3>Commodity P&L Tracker</h3>
+            <p>Actual purchases, sales, and profit from the live ledger. No projected or mocked values.</p>
+          </div>
+        </div>
+        <div className="brain-chart">
+          <ResponsiveContainer>
+            <BarChart data={analysis?.commodityPnLData || []} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
+              <YAxis stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+              <RechartsTooltip contentStyle={{ backgroundColor: 'rgba(10,10,10,0.92)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
+              <Legend wrapperStyle={{ fontSize: '12px', opacity: 0.8 }} />
+              <Bar dataKey="Purchases" fill="var(--accent-red)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Sales" fill="var(--accent-blue)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Profit" fill="var(--accent-green)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+function Simulator({
+  simMarginBump,
+  setSimMarginBump,
+  simODRate,
+  setSimODRate,
+  simProjection,
+}: {
+  simMarginBump: number
+  setSimMarginBump: (value: number) => void
+  simODRate: number
+  setSimODRate: (value: number) => void
+  simProjection: { profitDiff: number; odDiff: number } | null
+}) {
+  return (
+    <motion.div className="glass-card brain-simulator" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="brain-section-heading">
+        <SlidersHorizontal size={20} color="var(--accent-amber)" />
+        <div>
+          <h3>What If Simulator</h3>
+          <p>Test margin movement and OD negotiation impact before making decisions.</p>
+        </div>
+      </div>
+      <div className="brain-simulator-controls">
+        <div className="brain-control">
+          <div className="brain-control-row">
+            <span>Gross margin shift</span>
+            <strong style={{ color: simMarginBump >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+              {simMarginBump > 0 ? '+' : ''}
+              {simMarginBump}%
+            </strong>
+          </div>
+          <input type="range" min="-5" max="10" step="0.5" value={simMarginBump} onChange={(event) => setSimMarginBump(Number(event.target.value))} />
+          {simProjection && simMarginBump !== 0 && <p>{formatCurrency(simProjection.profitDiff)} projected net movement</p>}
+        </div>
+        <div className="brain-control">
+          <div className="brain-control-row">
+            <span>OD interest rate</span>
+            <strong style={{ color: 'var(--accent-blue)' }}>{simODRate}%</strong>
+          </div>
+          <input type="range" min="6" max="18" step="0.5" value={simODRate} onChange={(event) => setSimODRate(Number(event.target.value))} />
+          {simProjection && simODRate !== 10.5 && <p>{formatCurrency(Math.abs(simProjection.odDiff))} monthly interest movement</p>}
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+function AiReportPanel({ data, onAsk }: { data: BrainApiResponse; onAsk: (question: string) => void }) {
+  const report = data.report
+  const snapshot = data.snapshot
+
+  return (
+    <motion.div className="brain-report" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="glass-card brain-report-hero">
+        <div>
+          <div className="brain-kicker">
+            <Brain size={16} />
+            <span>{sanitizeUiText(report.modelUsed)}</span>
+            <span>{report.confidence} confidence</span>
+          </div>
+          <h2>{sanitizeUiText(report.title)}</h2>
+          <p>{sanitizeUiText(report.briefOverview)}</p>
+        </div>
+        <div className="brain-focus-card">
+          <span>Command Focus</span>
+          <strong>{sanitizeUiText(report.commandFocus)}</strong>
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        <MetricTile icon={CircleDollarSign} label="Turnover" value={formatCompactCurrency(snapshot.summary.totalSales)} color="var(--accent-blue)" />
+        <MetricTile icon={BarChart3} label="Gross Profit" value={formatCompactCurrency(snapshot.summary.grossProfit)} color={snapshot.summary.grossProfit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'} />
+        <MetricTile icon={ClipboardList} label="Receivables" value={formatCompactCurrency(snapshot.summary.outstandingReceivables)} color="var(--accent-amber)" />
+        <MetricTile icon={Activity} label="FY Net Margin" value={`${snapshot.financialYear.netMargin}%`} color={snapshot.financialYear.netProfit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'} />
+      </div>
+
+      <ReportSection title="Executive Summary" icon={CheckCircle2}>
+        <div className="brain-report-grid">
+          {report.executiveSummary.map((item, index) => (
+            <div className="brain-report-card" key={`${item.heading}-${index}`}>
+              <span>{sanitizeUiText(item.heading)}</span>
+              {item.value && <strong>{sanitizeUiText(item.value)}</strong>}
+              <p>{sanitizeUiText(item.insight)}</p>
+            </div>
+          ))}
+        </div>
+      </ReportSection>
+
+      <ReportSection title="Financial Report" icon={BarChart3}>
+        <div className="brain-finance-list">
+          {report.financialReport.map((item, index) => (
+            <div className="brain-finance-row" key={`${item.heading}-${index}`}>
+              <div className="brain-status-dot" style={{ background: statusColor(item.status) }} />
+              <div>
+                <strong>{sanitizeUiText(item.heading)}</strong>
+                <p>{sanitizeUiText(item.insight)}</p>
+              </div>
+              {item.metric && <span>{sanitizeUiText(item.metric)}</span>}
+            </div>
+          ))}
+        </div>
+      </ReportSection>
+
+      <div className="brain-two-column">
+        <ReportSection title="Priority Actions" icon={Target}>
+          <div className="brain-action-list">
+            {report.priorityActions.map((item, index) => (
+              <div className="brain-action-card" key={`${item.action}-${index}`}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{sanitizeUiText(item.action)}</strong>
+                  <p>{sanitizeUiText(item.reason)}</p>
+                  <small>{sanitizeUiText(item.expectedImpact)}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ReportSection>
+
+        <ReportSection title="Risk Register" icon={ShieldAlert}>
+          <div className="brain-risk-list">
+            {report.risks.map((item, index) => (
+              <div className="brain-risk-card" key={`${item.risk}-${index}`}>
+                <div className="brain-risk-heading">
+                  <strong>{sanitizeUiText(item.risk)}</strong>
+                  <span style={{ color: severityColor(item.severity) }}>{item.severity}</span>
+                </div>
+                <p>{sanitizeUiText(item.mitigation)}</p>
+              </div>
+            ))}
+          </div>
+        </ReportSection>
+      </div>
+
+      <ReportSection title="Opportunity Map" icon={Sparkles}>
+        <div className="brain-report-grid">
+          {report.opportunities.map((item, index) => (
+            <div className="brain-report-card" key={`${item.opportunity}-${index}`}>
+              <span>{sanitizeUiText(item.opportunity)}</span>
+              <p>{sanitizeUiText(item.move)}</p>
+              <small>{sanitizeUiText(item.expectedUpside)}</small>
+            </div>
+          ))}
+        </div>
+      </ReportSection>
+
+      <ReportSection title="Ask Next" icon={Send}>
+        <div className="brain-question-list">
+          {report.questionsToAskNext.map((nextQuestion, index) => (
+            <button
+              key={`${nextQuestion}-${index}`}
+              className="btn"
+              onClick={() => {
+                onAsk(nextQuestion)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            >
+              {sanitizeUiText(nextQuestion)}
+            </button>
+          ))}
+        </div>
+      </ReportSection>
+    </motion.div>
+  )
+}
+
+function MetricTile({ icon: Icon, label, value, color }: { icon: LucideIcon; label: string; value: string; color: string }) {
+  return (
+    <div className="stat-card" style={{ '--stat-color': color, '--stat-color-dim': `${color}22` } as CSSProperties}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-icon">
+        <Icon size={20} />
+      </div>
+    </div>
+  )
+}
+
+function ReportSection({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
+  return (
+    <section className="brain-report-section">
+      <div className="brain-section-heading">
+        <Icon size={20} color="var(--accent-blue)" />
+        <h3>{title}</h3>
+      </div>
+      {children}
+    </section>
   )
 }

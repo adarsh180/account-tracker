@@ -22,6 +22,7 @@ import {
   PiggyBank,
   Building2,
   Home,
+  Scale,
 } from 'lucide-react'
 
 const navSections = [
@@ -39,6 +40,7 @@ const navSections = [
     items: [
       { href: '/parties', label: 'Parties', icon: Users },
       { href: '/payments', label: 'Payments', icon: CreditCard },
+      { href: '/deals', label: 'Deal Finance', icon: Scale },
       { href: '/overdraft', label: 'Overdraft', icon: Landmark },
       { href: '/expenses', label: 'Expenses', icon: Building2 },
     ],

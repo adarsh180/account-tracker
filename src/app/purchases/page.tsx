@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AuthLayout from '@/components/AuthLayout'
-import { ShoppingCart, Plus, X, Edit2, Trash2, AlertCircle, Search } from 'lucide-react'
+import { ShoppingCart, Plus, X, Edit2, Trash2, AlertCircle, Search, Scale } from 'lucide-react'
 
 interface Party { id: string; name: string; type: string }
 interface Inventory { commodity: string; unit: string }
@@ -22,10 +22,23 @@ export default function PurchasesPage() {
   const [inventory, setInventory] = useState<Inventory[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [showNewSeller, setShowNewSeller] = useState(false)
   const [form, setForm] = useState({
     id: '', commodity: '', unit: 'KG', quantity: '', rate: '',
     laborCost: '0', transportCost: '0', loadingCost: '0', miscOverhead: '0', gstPercent: '0', tcsPercent: '0',
     partyId: '', date: new Date().toISOString().split('T')[0], notes: '',
+    trackDeal: false, dealName: '', dealType: 'DIRECT_PURCHASE', fundingSource: 'OWN_MONEY',
+    ownMoneyAmount: '', earnedMoneyAmount: '', odMoneyAmount: '', odToCashAmount: '', partnerMoneyAmount: '',
+    cashPaidAmount: '', onlinePaidAmount: '', expectedSaleValue: '',
+    dealPartnerName: '', dealPartnerAmount: '', dealPartnerShare: '', dealPartnerExpectedReturn: '',
+    profitShareNotes: '', dealNotes: '',
+  })
+  const [newSeller, setNewSeller] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    gstNumber: '',
+    paymentTerms: '0',
   })
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -33,7 +46,12 @@ export default function PurchasesPage() {
   const resetForm = () => setForm({ 
     id: '', commodity: '', unit: 'KG', quantity: '', rate: '', laborCost: '0', 
     transportCost: '0', loadingCost: '0', miscOverhead: '0', gstPercent: '0', tcsPercent: '0', 
-    partyId: '', date: new Date().toISOString().split('T')[0], notes: '' 
+    partyId: '', date: new Date().toISOString().split('T')[0], notes: '',
+    trackDeal: false, dealName: '', dealType: 'DIRECT_PURCHASE', fundingSource: 'OWN_MONEY',
+    ownMoneyAmount: '', earnedMoneyAmount: '', odMoneyAmount: '', odToCashAmount: '', partnerMoneyAmount: '',
+    cashPaidAmount: '', onlinePaidAmount: '', expectedSaleValue: '',
+    dealPartnerName: '', dealPartnerAmount: '', dealPartnerShare: '', dealPartnerExpectedReturn: '',
+    profitShareNotes: '', dealNotes: '',
   })
 
   useEffect(() => {
@@ -63,6 +81,21 @@ export default function PurchasesPage() {
     }
   }
 
+  const createSeller = async () => {
+    if (!newSeller.name.trim()) return
+    const res = await fetch('/api/parties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...newSeller, type: 'SELLER', paymentTerms: Number(newSeller.paymentTerms || 0) }),
+    })
+    if (!res.ok) return
+    const created = await res.json()
+    setParties(prev => [created, ...prev])
+    setForm(prev => ({ ...prev, partyId: created.id }))
+    setShowNewSeller(false)
+    setNewSeller({ name: '', phone: '', address: '', gstNumber: '', paymentTerms: '0' })
+  }
+
   const handleDelete = async () => {
     if (!deleteId) return
     const res = await fetch(`/api/purchases?id=${deleteId}`, { method: 'DELETE' })
@@ -89,6 +122,24 @@ export default function PurchasesPage() {
       partyId: purchase.party.name ? parties.find(p => p.name === purchase.party.name)?.id || '' : '',
       date: new Date(purchase.date).toISOString().split('T')[0],
       notes: purchase.notes || '',
+      trackDeal: false,
+      dealName: '',
+      dealType: 'DIRECT_PURCHASE',
+      fundingSource: 'OWN_MONEY',
+      ownMoneyAmount: '',
+      earnedMoneyAmount: '',
+      odMoneyAmount: '',
+      odToCashAmount: '',
+      partnerMoneyAmount: '',
+      cashPaidAmount: '',
+      onlinePaidAmount: '',
+      expectedSaleValue: '',
+      dealPartnerName: '',
+      dealPartnerAmount: '',
+      dealPartnerShare: '',
+      dealPartnerExpectedReturn: '',
+      profitShareNotes: '',
+      dealNotes: '',
     })
     setShowForm(true)
   }
@@ -148,12 +199,34 @@ export default function PurchasesPage() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Seller</label>
-                    <select className="input-glass" value={form.partyId} onChange={(e) => setForm({ ...form, partyId: e.target.value })}>
-                      <option value="">Select seller</option>
-                      {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+                    <div className="inline-party-select">
+                      <select className="input-glass" value={form.partyId} onChange={(e) => setForm({ ...form, partyId: e.target.value })}>
+                        <option value="">Select seller</option>
+                        {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <button className="btn btn-sm" onClick={() => setShowNewSeller(!showNewSeller)} type="button"><Plus size={14} /> New</button>
+                    </div>
                   </div>
                 </div>
+
+                {showNewSeller && (
+                  <div className="inline-party-box">
+                    <div className="form-row">
+                      <div className="form-group"><label className="form-label">Seller Name</label><input className="input-glass" value={newSeller.name} onChange={(e) => setNewSeller({ ...newSeller, name: e.target.value })} /></div>
+                      <div className="form-group"><label className="form-label">Phone</label><input className="input-glass" value={newSeller.phone} onChange={(e) => setNewSeller({ ...newSeller, phone: e.target.value })} /></div>
+                      <div className="form-group"><label className="form-label">GST Number</label><input className="input-glass" value={newSeller.gstNumber} onChange={(e) => setNewSeller({ ...newSeller, gstNumber: e.target.value })} /></div>
+                      <div className="form-group"><label className="form-label">Payment Terms Days</label><input className="input-glass" type="number" value={newSeller.paymentTerms} onChange={(e) => setNewSeller({ ...newSeller, paymentTerms: e.target.value })} /></div>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '12px' }}>
+                      <label className="form-label">Address</label>
+                      <textarea className="input-glass" value={newSeller.address} onChange={(e) => setNewSeller({ ...newSeller, address: e.target.value })} />
+                    </div>
+                    <div className="inline-party-actions">
+                      <button className="btn btn-sm" onClick={() => setShowNewSeller(false)} type="button">Cancel</button>
+                      <button className="btn btn-primary btn-sm" onClick={createSeller} type="button">Save Seller</button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="form-row" style={{ marginTop: '12px' }}>
                   <div className="form-group">
@@ -228,6 +301,47 @@ export default function PurchasesPage() {
                   <textarea className="input-glass" placeholder="Additional notes..." value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
                 </div>
 
+                {!form.id && (
+                  <div className="deal-inline-box">
+                    <label className="deal-inline-toggle">
+                      <input type="checkbox" checked={form.trackDeal} onChange={(e) => setForm({ ...form, trackDeal: e.target.checked })} />
+                      <span><Scale size={16} /> Add deal intelligence for this purchase</span>
+                    </label>
+                    {form.trackDeal && (
+                      <>
+                        <div className="form-row" style={{ marginTop: '12px' }}>
+                          <div className="form-group"><label className="form-label">Deal Name</label><input className="input-glass" value={form.dealName} onChange={(e) => setForm({ ...form, dealName: e.target.value })} placeholder="Optional" /></div>
+                          <div className="form-group"><label className="form-label">Deal Type</label><select className="input-glass" value={form.dealType} onChange={(e) => setForm({ ...form, dealType: e.target.value })}><option value="DIRECT_PURCHASE">Direct Purchase</option><option value="OD_TO_CASH_PURCHASE">OD To Cash Purchase</option><option value="PARTNERSHIP">Partnership</option><option value="RESALE">Resale Plan</option></select></div>
+                          <div className="form-group"><label className="form-label">Funding Source</label><select className="input-glass" value={form.fundingSource} onChange={(e) => setForm({ ...form, fundingSource: e.target.value })}><option value="OWN_MONEY">Own Money</option><option value="EARNED_MONEY">Earned Money</option><option value="OD_MONEY">OD Money</option><option value="OD_TO_CASH">OD Converted To Cash</option><option value="PARTNER_MONEY">Partner Money</option><option value="MIXED">Mixed</option></select></div>
+                        </div>
+                        <div className="form-row" style={{ marginTop: '12px' }}>
+                          <div className="form-group"><label className="form-label">Own Money</label><input className="input-glass" type="number" value={form.ownMoneyAmount} onChange={(e) => setForm({ ...form, ownMoneyAmount: e.target.value })} /></div>
+                          <div className="form-group"><label className="form-label">Earned Money</label><input className="input-glass" type="number" value={form.earnedMoneyAmount} onChange={(e) => setForm({ ...form, earnedMoneyAmount: e.target.value })} /></div>
+                          <div className="form-group"><label className="form-label">OD Money</label><input className="input-glass" type="number" value={form.odMoneyAmount} onChange={(e) => setForm({ ...form, odMoneyAmount: e.target.value })} /></div>
+                          <div className="form-group"><label className="form-label">OD To Cash</label><input className="input-glass" type="number" value={form.odToCashAmount} onChange={(e) => setForm({ ...form, odToCashAmount: e.target.value })} /></div>
+                        </div>
+                        <div className="form-row" style={{ marginTop: '12px' }}>
+                          <div className="form-group"><label className="form-label">Cash Paid</label><input className="input-glass" type="number" value={form.cashPaidAmount} onChange={(e) => setForm({ ...form, cashPaidAmount: e.target.value })} /></div>
+                          <div className="form-group"><label className="form-label">Online Paid</label><input className="input-glass" type="number" value={form.onlinePaidAmount} onChange={(e) => setForm({ ...form, onlinePaidAmount: e.target.value })} /></div>
+                          <div className="form-group"><label className="form-label">Expected Sale</label><input className="input-glass" type="number" value={form.expectedSaleValue} onChange={(e) => setForm({ ...form, expectedSaleValue: e.target.value })} /></div>
+                          <div className="form-group"><label className="form-label">Partner Invested</label><input className="input-glass" type="number" value={form.dealPartnerAmount} onChange={(e) => setForm({ ...form, dealPartnerAmount: e.target.value, partnerMoneyAmount: e.target.value })} /></div>
+                        </div>
+                        {form.dealType === 'PARTNERSHIP' && (
+                          <div className="form-row" style={{ marginTop: '12px' }}>
+                            <div className="form-group"><label className="form-label">Partner Name</label><input className="input-glass" value={form.dealPartnerName} onChange={(e) => setForm({ ...form, dealPartnerName: e.target.value })} /></div>
+                            <div className="form-group"><label className="form-label">Partner Share %</label><input className="input-glass" type="number" value={form.dealPartnerShare} onChange={(e) => setForm({ ...form, dealPartnerShare: e.target.value })} /></div>
+                            <div className="form-group"><label className="form-label">Partner Expected Return</label><input className="input-glass" type="number" value={form.dealPartnerExpectedReturn} onChange={(e) => setForm({ ...form, dealPartnerExpectedReturn: e.target.value })} /></div>
+                          </div>
+                        )}
+                        <div className="form-group" style={{ marginTop: '12px' }}>
+                          <label className="form-label">Deal Notes</label>
+                          <textarea className="input-glass" value={form.dealNotes} onChange={(e) => setForm({ ...form, dealNotes: e.target.value })} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ marginTop: '20px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                   <button className="btn" onClick={() => setShowForm(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={handleSubmit}>{form.id ? 'Save Changes' : 'Record Purchase'}</button>
@@ -267,7 +381,7 @@ export default function PurchasesPage() {
           <div className="glass-card empty-state">
             <Search className="empty-state-icon" size={48} style={{ opacity: 0.5 }} />
             <div className="empty-state-text">No results found</div>
-            <div className="empty-state-sub">No seller matches "{searchQuery}"</div>
+            <div className="empty-state-sub">No seller matches &quot;{searchQuery}&quot;</div>
           </div>
         ) : (
           <motion.div className="glass-card" style={{ padding: '4px 0', overflow: 'auto' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
