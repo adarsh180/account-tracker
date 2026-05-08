@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import AuthLayout from '@/components/AuthLayout'
 import {
   TrendingUp,
-  TrendingDown,
   DollarSign,
   Package,
   ShoppingCart,
@@ -100,7 +99,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [showTrueView, setShowTrueView] = useState(false)
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -157,7 +156,7 @@ export default function DashboardPage() {
                 color: 'var(--text-tertiary)',
               }}>
                 <span className="pulse-dot" style={{ background: 'var(--accent-green)' }} />
-                Updated {lastUpdate.toLocaleTimeString()}
+                Updated {lastUpdate ? lastUpdate.toLocaleTimeString() : 'Just now'}
               </span>
             </p>
           </div>

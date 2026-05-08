@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { getBusinessCommandCenterSnapshot } from '@/lib/business-command-center'
 import { generateBusinessAiReport } from '@/lib/google-business-ai'
 
@@ -11,11 +10,6 @@ type BrainRequest = {
 }
 
 export async function POST(req: Request) {
-  const session = await auth()
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   try {
     const body = (await req.json().catch(() => ({}))) as BrainRequest
     const question = typeof body.question === 'string' ? body.question.slice(0, 800) : ''
